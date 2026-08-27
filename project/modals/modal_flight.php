@@ -1,6 +1,6 @@
 <?php if (!defined('_GNUBOARD_')) exit; ?>
 
-<!-- 1. 촬영일 등록 메인 모달 -->
+<!-- 1. 신규 촬영일 및 EO 등록 모달 -->
 <dialog id="modal_add_flight" class="modal z-[200]">
     <div class="modal-box bg-base-100 border border-base-content/10 shadow-2xl rounded-2xl max-w-md">
         <h3 class="font-black text-lg mb-1 text-base-content flex items-center gap-2">
@@ -70,7 +70,51 @@
     <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
 
-<!-- 2. EO 데이터 파싱 & 엑셀 화면 프리뷰 모달 -->
+<!-- 2. [더블클릭 시 호출] EO 폴더 내 파일 선택 모달 -->
+<dialog id="modal_eo_file_picker" class="modal z-[210]">
+    <div class="modal-box bg-base-100 border border-base-content/10 shadow-2xl rounded-2xl max-w-lg p-6 flex flex-col max-h-[80vh]">
+        <div class="flex justify-between items-center pb-3 border-b border-base-content/10">
+            <div>
+                <h3 class="font-black text-lg text-base-content flex items-center gap-2">
+                    <span>📁 EO 성과 파일 선택</span>
+                    <span id="picker_flight_date" class="badge badge-primary font-mono text-xs font-bold"></span>
+                </h3>
+                <p class="text-xs text-base-content/60 mt-0.5">폴더에 있는 성과 파일 중 적용할 파일을 선택하세요.</p>
+            </div>
+            <button type="button" class="btn btn-sm btn-circle btn-ghost" onclick="modal_eo_file_picker.close()">✕</button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto custom-scrollbar my-4 rounded-xl border border-base-content/10 bg-base-200/30">
+            <table class="table table-xs w-full text-center select-none">
+                <thead class="bg-base-200 text-base-content font-bold sticky top-0 z-10 text-[11px]">
+                    <tr>
+                        <th class="w-12">선택</th>
+                        <th class="text-left px-3">파일명</th>
+                        <th class="w-36">수정일자</th>
+                        <th class="w-20">크기</th>
+                        <th class="w-16">상태</th>
+                    </tr>
+                </thead>
+                <tbody id="eo_picker_tbody" class="divide-y divide-base-content/5 text-xs font-mono">
+                    <tr><td colspan="5" class="py-10 text-base-content/40 font-bold">파일을 불러오는 중...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="flex justify-between items-center pt-2 border-t border-base-content/10">
+            <span class="text-xs text-base-content/60">💡 파일을 선택하면 엑셀 프리뷰 검증 창으로 이동합니다.</span>
+            <div class="flex gap-2">
+                <button type="button" class="btn btn-ghost btn-sm rounded-xl font-bold" onclick="modal_eo_file_picker.close()">닫기</button>
+                <button type="button" id="btn_proceed_eo_preview" class="btn btn-primary btn-sm rounded-xl font-bold px-5" onclick="proceedToEOPreview()" disabled>
+                    <span>파일 검증하기 🔍</span>
+                </button>
+            </div>
+        </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<!-- 3. EO 데이터 검증 & 엑셀 화면 프리뷰 모달 -->
 <dialog id="modal_eo_preview" class="modal z-[220]">
     <div class="modal-box bg-base-100 border border-base-content/10 shadow-2xl rounded-2xl max-w-5xl w-11/12 h-[85vh] flex flex-col p-6">
         
@@ -109,14 +153,24 @@
             </table>
         </div>
 
+        <!-- 최종 DB 반영 폼 (서버 파일 선택 모드 시 전송) -->
+        <form id="form_apply_eo_to_db" method="post" action="action.php">
+            <input type="hidden" name="action" value="apply_selected_eo_file">
+            <input type="hidden" name="prj_id" value="<?php echo $prj_id; ?>">
+            <input type="hidden" name="date_id" id="apply_eo_date_id" value="">
+            <input type="hidden" name="filename" id="apply_eo_filename" value="">
+            <input type="hidden" name="parsed_shots" id="apply_eo_shots" value="0">
+            <input type="hidden" name="matched_blocks" id="apply_eo_matched_blocks" value="">
+        </form>
+
         <div class="flex justify-between items-center pt-2 border-t border-base-content/10">
             <span class="text-xs text-base-content/60 font-medium" id="preview_footer_desc">
                 💡 ID의 앞 4자리 코스 번호를 기준으로 프로젝트 블럭과 자동 매칭되었습니다.
             </span>
             <div class="flex gap-2">
                 <button type="button" class="btn btn-ghost btn-sm rounded-xl font-bold" onclick="modal_eo_preview.close()">취소</button>
-                <button type="button" class="btn btn-primary btn-sm rounded-xl font-bold px-6 shadow-md shadow-primary/25" onclick="applyEODataToForm()">
-                    <span>입력 완료 (적용) 🚀</span>
+                <button type="button" id="btn_confirm_apply_eo" class="btn btn-primary btn-sm rounded-xl font-bold px-6 shadow-md shadow-primary/25" onclick="executeEOApply()">
+                    <span>이 파일로 활성화 및 반영 🚀</span>
                 </button>
             </div>
         </div>
@@ -125,7 +179,7 @@
     <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
 
-<!-- 3. 검수내역 입력 모달 -->
+<!-- 4. 검수내역 입력 모달 (미사용 매수 반영) -->
 <dialog id="modal_flight_inspect" class="modal z-[210]">
     <div class="modal-box bg-base-100 border border-base-content/10 shadow-2xl rounded-2xl max-w-sm">
         <h3 class="font-black text-lg mb-1 text-base-content flex items-center gap-2">
@@ -143,14 +197,19 @@
                 <input type="number" id="inspect_total_shots" class="input input-bordered input-sm rounded-xl font-mono text-xs bg-base-200/50" readonly>
             </div>
 
+            <div class="form-control">
+                <label class="label py-1"><span class="label-text font-bold text-xs text-success">정상 사용 매수</span></label>
+                <input type="number" name="used_shots" id="inspect_used_shots" min="0" class="input input-bordered input-sm rounded-xl font-mono text-xs focus:input-success font-bold" required oninput="calcShotBalance()">
+            </div>
+
             <div class="grid grid-cols-2 gap-2">
                 <div class="form-control">
-                    <label class="label py-1"><span class="label-text font-bold text-xs text-success">정상 사용 매수</span></label>
-                    <input type="number" name="used_shots" id="inspect_used_shots" min="0" class="input input-bordered input-sm rounded-xl font-mono text-xs focus:input-success font-bold" required oninput="calcReshootShots()">
+                    <label class="label py-1"><span class="label-text font-bold text-xs text-warning">미사용 매수</span></label>
+                    <input type="number" name="unused_shots" id="inspect_unused_shots" min="0" class="input input-bordered input-sm rounded-xl font-mono text-xs focus:input-warning font-bold" required>
                 </div>
                 <div class="form-control">
-                    <label class="label py-1"><span class="label-text font-bold text-xs text-warning">재촬영(결손) 매수</span></label>
-                    <input type="number" name="reshoot_shots" id="inspect_reshoot_shots" min="0" class="input input-bordered input-sm rounded-xl font-mono text-xs focus:input-warning font-bold" required>
+                    <label class="label py-1"><span class="label-text font-bold text-xs text-error">재촬영(결손) 매수</span></label>
+                    <input type="number" name="reshoot_shots" id="inspect_reshoot_shots" min="0" class="input input-bordered input-sm rounded-xl font-mono text-xs focus:input-error font-bold" required>
                 </div>
             </div>
 
@@ -163,12 +222,10 @@
     <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
 
-<!-- 4. 촬영일 삭제 확인 모달 -->
+<!-- 5. 촬영일 삭제 확인 모달 -->
 <dialog id="modal_confirm_delete_flight" class="modal z-[210]">
     <div class="modal-box bg-base-100 border border-error/20 shadow-2xl rounded-2xl max-w-sm text-center">
-        <div class="w-14 h-14 rounded-full bg-error/10 text-error flex items-center justify-center text-2xl mx-auto mb-3">
-            ⚠️
-        </div>
+        <div class="w-14 h-14 rounded-full bg-error/10 text-error flex items-center justify-center text-2xl mx-auto mb-3">⚠️</div>
         <h3 class="font-black text-lg text-base-content">선택한 촬영일을 삭제합니까?</h3>
         <div class="text-xs text-base-content/70 mt-2 space-y-1">
             <p>DB 기록뿐만 아니라 <strong class="text-error font-bold">E 드라이브의 실제 촬영일 폴더(EO, INDEX, 문서)</strong>까지 완전히 영구 삭제됩니다.</p>
@@ -186,49 +243,106 @@
 var currentParsedEO = [];
 var currentMatchedBlocks = [];
 var isBlockRegistered = true;
+var currentPickerDateId = 0;
+var currentSelectedPickerFile = '';
+var previewMode = 'UPLOAD'; // 'UPLOAD' (새로 등록) 또는 'PICKER' (기존 폴더 파일 선택)
 
-function handleEOFileSelect(input) {
-    const file = input.files[0];
-    if (!file) return;
+// [더블클릭] EO 파일 목록 가져오기 및 모달 열기
+function openEOFilePicker(dateId, dateStr) {
+    currentPickerDateId = dateId;
+    currentSelectedPickerFile = '';
+    document.getElementById('picker_flight_date').innerText = dateStr;
+    document.getElementById('btn_proceed_eo_preview').disabled = true;
 
-    document.getElementById('preview_filename').innerText = `파일명: ${file.name}`;
-    const reader = new FileReader();
-    const fileName = file.name.toLowerCase();
-    const isExcel = fileName.endsWith('.xlsx') || fileName.endsWith('.xls');
+    const tbody = document.getElementById('eo_picker_tbody');
+    tbody.innerHTML = `<tr><td colspan="5" class="py-10 text-base-content/40 font-bold">📁 폴더를 스캔하는 중...</td></tr>`;
+    modal_eo_file_picker.showModal();
 
-    if (isExcel) {
-        if (typeof XLSX === 'undefined') {
-            alert('엑셀 파싱 라이브러리가 로드되지 않았습니다.');
-            return;
-        }
-        reader.onload = function(e) {
-            try {
-                const data = new Uint8Array(e.target.result);
-                const workbook = XLSX.read(data, { type: 'array' });
-                const firstSheetName = workbook.SheetNames[0];
-                const worksheet = workbook.Sheets[firstSheetName];
-                const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-                processRawData(jsonData);
-            } catch(err) {
-                alert('엑셀 파싱 오류: ' + err.message);
+    fetch(`action.php?action=get_eo_file_list&prj_id=<?php echo $prj_id; ?>&date_id=${dateId}`)
+        .then(res => res.json())
+        .then(data => {
+            if (!data.success) {
+                tbody.innerHTML = `<tr><td colspan="5" class="py-10 text-error font-bold">${data.message}</td></tr>`;
+                return;
             }
-        };
-        reader.readAsArrayBuffer(file);
-    } else {
-        reader.onload = function(e) {
-            try {
-                const text = e.target.result;
-                const lines = text.split(/\r\n|\n|\r/);
-                const rawData = lines.map(line => line.trim().split(/\t|,|\s+/).filter(v => v !== ''));
-                processRawData(rawData);
-            } catch(err) {
-                alert('텍스트 파싱 오류: ' + err.message);
+            if (data.files.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="py-10 text-base-content/40 font-bold">폴더 내 등록된 EO 성과 파일이 없습니다.</td></tr>`;
+                return;
             }
-        };
-        reader.readAsText(file, 'EUC-KR');
-    }
+
+            tbody.innerHTML = '';
+            data.files.forEach((file, idx) => {
+                const tr = document.createElement('tr');
+                tr.className = `hover:bg-base-200/60 cursor-pointer ${file.is_current ? 'bg-primary/10' : ''}`;
+                tr.onclick = () => {
+                    document.getElementById(`eo_radio_${idx}`).checked = true;
+                    currentSelectedPickerFile = file.filename;
+                    document.getElementById('btn_proceed_eo_preview').disabled = false;
+                };
+
+                tr.innerHTML = `
+                    <td>
+                        <input type="radio" name="selected_eo_radio" id="eo_radio_${idx}" value="${file.filename}" 
+                               class="radio radio-primary radio-xs" ${file.is_current ? 'checked' : ''} 
+                               onchange="currentSelectedPickerFile='${file.filename}'; document.getElementById('btn_proceed_eo_preview').disabled=false;">
+                    </td>
+                    <td class="text-left px-3 font-bold ${file.is_current ? 'text-primary' : ''}">${file.filename}</td>
+                    <td class="text-base-content/60 text-[11px]">${file.mtime}</td>
+                    <td class="text-base-content/60 text-[11px]">${file.size}</td>
+                    <td>
+                        ${file.is_current ? '<span class="badge badge-primary badge-xs py-1 px-1.5 font-bold">현재 활성</span>' : '<span class="badge badge-ghost badge-xs py-1 px-1.5">보관</span>'}
+                    </td>
+                `;
+                tbody.appendChild(tr);
+
+                if (file.is_current) {
+                    currentSelectedPickerFile = file.filename;
+                    document.getElementById('btn_proceed_eo_preview').disabled = false;
+                }
+            });
+        })
+        .catch(err => {
+            tbody.innerHTML = `<tr><td colspan="5" class="py-10 text-error font-bold">통신 오류: ${err.message}</td></tr>`;
+        });
 }
 
+// 선택 파일 비동기 내용 로드 -> 프리뷰 엑셀 모달 열기
+function proceedToEOPreview() {
+    if (!currentSelectedPickerFile) return;
+
+    modal_eo_file_picker.close();
+    previewMode = 'PICKER';
+    document.getElementById('preview_filename').innerText = `파일명: ${currentSelectedPickerFile}`;
+
+    fetch(`action.php?action=read_eo_file_content&prj_id=<?php echo $prj_id; ?>&date_id=${currentPickerDateId}&filename=${encodeURIComponent(currentSelectedPickerFile)}`)
+        .then(res => res.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.message);
+                return;
+            }
+
+            if (data.is_binary) {
+                const binaryStr = atob(data.base64);
+                const bytes = new Uint8Array(binaryStr.length);
+                for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+                
+                const workbook = XLSX.read(bytes, { type: 'array' });
+                const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                processRawData(jsonData);
+            } else {
+                const lines = data.content.split(/\r\n|\n|\r/);
+                const rawData = lines.map(line => line.trim().split(/\t|,|\s+/).filter(v => v !== ''));
+                processRawData(rawData);
+            }
+        })
+        .catch(err => {
+            alert('파일 읽기 오류: ' + err.message);
+        });
+}
+
+// 데이터 정규화 및 블럭 매칭
 function processRawData(rows) {
     currentParsedEO = [];
     const courseSet = new Set();
@@ -246,9 +360,7 @@ function processRawData(rows) {
             courseNo = parseInt(id.substring(0, 4), 10);
         }
 
-        if (!isNaN(courseNo) && courseNo > 0) {
-            courseSet.add(courseNo);
-        }
+        if (!isNaN(courseNo) && courseNo > 0) courseSet.add(courseNo);
 
         currentParsedEO.push({
             id: id,
@@ -264,7 +376,7 @@ function processRawData(rows) {
     });
 
     if (currentParsedEO.length === 0) {
-        alert('유효한 데이터 행이 없습니다.');
+        alert('유효한 데이터 행을 추출할 수 없습니다.');
         return;
     }
 
@@ -291,8 +403,7 @@ function processRawData(rows) {
     }
 
     renderEOPreviewTable();
-    const previewModal = document.getElementById('modal_eo_preview');
-    if (previewModal) previewModal.showModal();
+    modal_eo_preview.showModal();
 }
 
 function renderEOPreviewTable() {
@@ -334,9 +445,49 @@ function renderEOPreviewTable() {
     }
 }
 
+function executeEOApply() {
+    if (previewMode === 'UPLOAD') {
+        applyEODataToForm();
+    } else {
+        const matchedStr = currentMatchedBlocks.map(b => b.name).join(', ');
+        document.getElementById('apply_eo_date_id').value = currentPickerDateId;
+        document.getElementById('apply_eo_filename').value = currentSelectedPickerFile;
+        document.getElementById('apply_eo_shots').value = currentParsedEO.length;
+        document.getElementById('apply_eo_matched_blocks').value = matchedStr;
+        document.getElementById('form_apply_eo_to_db').submit();
+    }
+}
+
+function handleEOFileSelect(input) {
+    const file = input.files[0];
+    if (!file) return;
+
+    previewMode = 'UPLOAD';
+    document.getElementById('preview_filename').innerText = `파일명: ${file.name}`;
+    const reader = new FileReader();
+    const fileName = file.name.toLowerCase();
+
+    if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+        reader.onload = function(e) {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+            processRawData(jsonData);
+        };
+        reader.readAsArrayBuffer(file);
+    } else {
+        reader.onload = function(e) {
+            const lines = e.target.result.split(/\r\n|\n|\r/);
+            const rawData = lines.map(line => line.trim().split(/\t|,|\s+/).filter(v => v !== ''));
+            processRawData(rawData);
+        };
+        reader.readAsText(file, 'EUC-KR');
+    }
+}
+
 function applyEODataToForm() {
     modal_eo_preview.close();
-
     const count = currentParsedEO.length;
     document.getElementById('input_parsed_shots').value = count;
 
@@ -359,29 +510,27 @@ function applyEODataToForm() {
             blockList.innerHTML += `<span class="badge badge-neutral badge-sm font-mono">${b.name} (${b.range})</span>`;
         });
         blockContainer.classList.remove('hidden');
-    } else {
-        document.getElementById('input_matched_blocks').value = '미매칭';
-        blockContainer.classList.add('hidden');
     }
 
     document.getElementById('btn_reopen_preview').classList.remove('hidden');
 }
 
-function openFlightInspectModal(dateId, dateStr, total, used, reshoot) {
+function openFlightInspectModal(dateId, dateStr, total, used, unused, reshoot) {
     document.getElementById('inspect_date_id').value = dateId;
     document.getElementById('inspect_target_date').innerText = `촬영일자: ${dateStr}`;
     document.getElementById('inspect_total_shots').value = total;
     document.getElementById('inspect_used_shots').value = used;
+    document.getElementById('inspect_unused_shots').value = unused;
     document.getElementById('inspect_reshoot_shots').value = reshoot;
     modal_flight_inspect.showModal();
 }
 
-function calcReshootShots() {
+function calcShotBalance() {
     const total = parseInt(document.getElementById('inspect_total_shots').value, 10) || 0;
     const used = parseInt(document.getElementById('inspect_used_shots').value, 10) || 0;
-    const reshootInput = document.getElementById('inspect_reshoot_shots');
+    const unusedInput = document.getElementById('inspect_unused_shots');
     if (total >= used) {
-        reshootInput.value = total - used;
+        unusedInput.value = total - used;
     }
 }
 
@@ -394,13 +543,6 @@ function confirmFlightDelete() {
     const dates = Array.from(checkedItems).map(i => i.dataset.date).join(', ');
     document.getElementById('delete_flight_target_list').innerText = `대상: ${dates}`;
     modal_confirm_delete_flight.showModal();
-}
-
-function executeFlightDelete() {
-    const form = document.getElementById('form_flight_delete');
-    if (form) {
-        form.submit();
-    }
 }
 
 function executeFlightDelete() {

@@ -333,6 +333,7 @@ if ($b_res) {
                 else if (toastKey === 'status_inactive') triggerToast(`[${val}] 촬영일이 '비활성' 상태로 제외되었습니다.`, 'warning', '🔴');
                 else if (toastKey === 'inspect_ok') triggerToast('검수 내역(사용/재촬영 매수)이 성공적으로 저장되었습니다.', 'success', '✍️');
                 else if (toastKey === 'sync_ok') triggerToast('파일 시스템 데이터를 스캔하여 DB 캐시를 갱신했습니다.', 'success', '⚡');
+				else if (toastKey === 'eo_applied_ok') {triggerToast(`[${val}] 성과 파일이 활성화되어 DB에 매수 및 블럭이 반영되었습니다.`, 'success', '🧭');}
 
                 const cleanUrl = window.location.pathname + '?id=' + (urlParams.get('id') || '') + '&tab=' + activeTab;
                 window.history.replaceState({}, document.title, cleanUrl);

@@ -2,6 +2,12 @@
 include_once('./_common.php');
 
 if (!$is_member) {
+    // AJAX 요청인 경우 JSON 에러 반환
+    if (isset($_REQUEST['action']) && in_array($_REQUEST['action'], ['get_eo_file_list', 'read_eo_file_content'])) {
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['success' => false, 'message' => '로그인이 필요합니다.']);
+        exit;
+    }
     action_goto_url(G5_BBS_URL.'/login.php');
 }
 
@@ -20,7 +26,6 @@ if (!$prj) {
 $base_dir = 'E:\#KYS_IMAGERY_SERVER\\' . $prj['prj_name'];
 $current_user_name = $member['mb_name'] ? $member['mb_name'] : $member['mb_nick'];
 
-// 기능별 액션 분기 처리
 switch ($action) {
     // 1. 블럭 관련
     case 'add_block_single':
@@ -29,10 +34,14 @@ switch ($action) {
         include_once('./actions/act_block.php');
         break;
 
-    // 2. 촬영일 관련
+    // 2. 촬영일 관련 (AJAX 조회 및 교체 적용 포함)
     case 'add_flight_date':
-    case 'toggle_flight_date':
-    case 'delete_flight_date':
+    case 'update_flight_inspect':
+    case 'toggle_flight_status':
+    case 'delete_flight_dates':
+    case 'get_eo_file_list':        // [추가]
+    case 'read_eo_file_content':    // [추가]
+    case 'apply_selected_eo_file':  // [추가]
         include_once('./actions/act_flight.php');
         break;
 
@@ -48,7 +57,7 @@ switch ($action) {
         include_once('./actions/act_qa.php');
         break;
 
-    // 5. ⚡ DB 동기화
+    // 5. DB 동기화
     case 'sync_db':
         include_once('./actions/act_sync.php');
         break;
