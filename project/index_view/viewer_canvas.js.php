@@ -6,8 +6,8 @@ const rawEntities = <?php echo $entities_json ?: '[]'; ?>;
 let layerState    = <?php echo $layers_json ?: '{}'; ?>;
 const canvas      = document.getElementById('cad_canvas');
 
-console.log("[CAD DEBUG] 로드된 엔티티 총 개수:", rawEntities.length);
-console.log("[CAD DEBUG] 로드된 레이어:", layerState);
+console.log("[CAD V2] 로드된 엔티티 총 개수:", rawEntities.length);
+console.log("[CAD V2] 로드된 레이어 테이블:", layerState);
 
 let scale = 1;
 let panX = 0, panY = 0;
@@ -17,7 +17,7 @@ let lastWheelClickTime = 0;
 
 let minX = 0, maxX = 0, minY = 0, maxY = 0, centerX = 0, centerY = 0;
 
-// 1. 레이어 UI 렌더링
+// 레이어 관리 UI 렌더링
 function initLayerManagerUI() {
     const container = document.getElementById('layer_list_container');
     if (!container) return;
@@ -35,7 +35,7 @@ function initLayerManagerUI() {
         row.innerHTML = `
             <div class="flex items-center gap-2 truncate max-w-[130px]" title="${l.name}">
                 <span class="w-2.5 h-2.5 rounded-full border border-white/20 flex-shrink-0" style="background-color: ${l.color_hex};"></span>
-                <span class="font-mono truncate ${l.frozen ? 'opacity-30 line-through' : (l.visible ? 'text-base-content' : 'opacity-40')}">${l.name}</span>
+                <span class="font-mono truncate ${l.frozen ? 'opacity-30 line-through' : (l.visible ? 'text-base-content font-bold' : 'opacity-40')}">${l.name}</span>
             </div>
             <div class="flex items-center gap-1.5 flex-shrink-0">
                 <button type="button" class="btn btn-ghost btn-xs btn-circle ${l.visible ? 'text-warning' : 'text-base-content/20'}" 
@@ -73,7 +73,7 @@ function toggleLayerPanel() {
     if (panel) panel.classList.toggle('hidden');
 }
 
-// 2. 바운딩 박스 및 중심 좌표 계산
+// 바운딩 박스 계산
 function calculateBounds() {
     let pts = [];
     rawEntities.forEach(e => {
@@ -83,7 +83,7 @@ function calculateBounds() {
     });
 
     if (pts.length === 0) {
-        console.warn("[CAD DEBUG] 좌표를 가진 엔티티가 없습니다.");
+        console.warn("[CAD V2] 좌표 엔티티가 없습니다.");
         return false;
     }
 
@@ -100,19 +100,18 @@ function calculateBounds() {
     centerX = (minX + maxX) / 2;
     centerY = (minY + maxY) / 2;
     
-    console.log(`[CAD DEBUG] Bounds: X(${minX} ~ ${maxX}), Y(${minY} ~ ${maxY}), Center(${centerX}, ${centerY})`);
+    console.log(`[CAD V2] Bounding Box: X(${minX} ~ ${maxX}), Y(${minY} ~ ${maxY}), Center(${centerX}, ${centerY})`);
     return true;
 }
 
-// 3. 화면 맞춤 (Fit View)
+// 뷰포트 맞춤
 function fitView(animate = false) {
     if (!canvas) return;
 
-    // 캔버스 크기 강제 동기화
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
 
-    const padding = 140;
+    const padding = 120;
     const w = Math.max(100, canvas.width - padding);
     const h = Math.max(100, canvas.height - padding);
 
@@ -126,28 +125,26 @@ function fitView(animate = false) {
     scale = targetScale;
     panX = targetPanX;
     panY = targetPanY;
-    
-    console.log(`[CAD DEBUG] FitView 적용: Scale(${scale}), Pan(${panX}, ${panY}), Canvas Size(${canvas.width}x${canvas.height})`);
+
     draw();
 }
 
-// 4. CAD 렌더링 루프
+// 메인 렌더링 루프
 function draw() {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     ctx.save();
-    // 중심점 기준 화면 중앙 정렬
     ctx.translate(canvas.width / 2 + panX, canvas.height / 2 + panY);
-    ctx.scale(scale, -scale); // CAD 표준 Y축 상향 반전
+    ctx.scale(scale, -scale); // CAD Y축 상향 반전
 
     // 1. 코스 선형 렌더링
     const courses = {};
     rawEntities.forEach(e => {
         if (e.type === 'TEXT' && (!e.layer.includes('INDEX') && !e.layer.includes('G50'))) {
             const l = layerState[e.layer];
-            if (l && (!l.visible || l.frozen)) return;
+            if (!l || !l.visible || l.frozen) return;
             const cNo = e.text.includes('_') ? e.text.split('_')[0] : e.text.substring(0, 4);
             if (!courses[cNo]) courses[cNo] = [];
             courses[cNo].push(e);
@@ -169,7 +166,7 @@ function draw() {
     });
     ctx.setLineDash([]);
 
-    // 2. 전체 엔티티 렌더링
+    // 2. CAD 엔티티 렌더링
     const screenTextSize = 150 * scale;
     const showPhotoText = screenTextSize > 4;
     const dotRadius = Math.max(30, 2 / scale);
@@ -180,7 +177,6 @@ function draw() {
 
         const color = (l && l.color_hex) ? l.color_hex : '#ffffff';
 
-        // LINE
         if (e.type === 'LINE') {
             ctx.beginPath();
             ctx.moveTo(e.x1 - centerX, e.y1 - centerY);
@@ -188,9 +184,7 @@ function draw() {
             ctx.lineWidth = Math.max(1, 1.5 / scale);
             ctx.strokeStyle = color;
             ctx.stroke();
-        }
-        // LWPOLYLINE
-        else if (e.type === 'LWPOLYLINE' && e.points && e.points.length > 0) {
+        } else if (e.type === 'LWPOLYLINE' && e.points && e.points.length > 0) {
             ctx.beginPath();
             ctx.moveTo(e.points[0].x - centerX, e.points[0].y - centerY);
             for (let j = 1; j < e.points.length; j++) {
@@ -199,20 +193,15 @@ function draw() {
             ctx.lineWidth = Math.max(1, 1.5 / scale);
             ctx.strokeStyle = color;
             ctx.stroke();
-        }
-        // CIRCLE (주점)
-        else if (e.type === 'CIRCLE') {
+        } else if (e.type === 'CIRCLE') {
             ctx.beginPath();
             ctx.arc(e.x - centerX, e.y - centerY, dotRadius, 0, Math.PI * 2);
             ctx.fillStyle = color;
             ctx.fill();
-        }
-        // TEXT
-        else if (e.type === 'TEXT') {
+        } else if (e.type === 'TEXT') {
             const px = e.x - centerX;
             const py = e.y - centerY;
 
-            // 도엽명/번호
             if (e.layer === 'INDEX_50K') {
                 ctx.save();
                 ctx.translate(px, py);
@@ -223,9 +212,7 @@ function draw() {
                 ctx.textBaseline = 'middle';
                 ctx.fillText(e.text, 0, 0);
                 ctx.restore();
-            } 
-            // 사진 번호
-            else if (showPhotoText) {
+            } else if (showPhotoText) {
                 ctx.save();
                 ctx.translate(px, py);
                 ctx.scale(1 / scale, -1 / scale);
@@ -242,10 +229,8 @@ function draw() {
     ctx.restore();
 }
 
-// 5. 실행 및 마우스 바인딩
 function initViewer() {
     if (!canvas || rawEntities.length === 0) return;
-    
     if (calculateBounds()) {
         fitView(false);
         initLayerManagerUI();
@@ -254,6 +239,11 @@ function initViewer() {
 
 window.addEventListener('load', initViewer);
 window.addEventListener('resize', () => fitView(false));
+
+// 즉시 실행 트리거
+if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(initViewer, 50);
+}
 
 if (canvas) {
     canvas.addEventListener('mousedown', (e) => {
