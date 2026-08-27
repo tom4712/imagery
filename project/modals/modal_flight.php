@@ -290,7 +290,7 @@ function openEOFilePicker(dateId, dateStr) {
                     <td class="text-base-content/60 text-[11px]">${file.mtime}</td>
                     <td class="text-base-content/60 text-[11px]">${file.size}</td>
                     <td>
-                        ${file.is_current ? '<span class="badge badge-primary badge-xs py-1 px-1.5 font-bold">현재 활성</span>' : '<span class="badge badge-ghost badge-xs py-1 px-1.5">보관</span>'}
+                        ${file.is_current ? '<span class="badge badge-primary badge-xs py-1 px-1.5 font-bold">🔑</span>' : '<span class="badge badge-ghost badge-xs py-1 px-1.5">보관</span>'}
                     </td>
                 `;
                 tbody.appendChild(tr);

@@ -202,14 +202,24 @@ if ($b_res) {
         <!-- 탭 네비게이션 & 컨텐츠 -->
         <div class="flex-1 flex flex-col min-h-0 bg-base-100/40 rounded-2xl border border-base-content/10 p-4">
             <div class="flex justify-between items-center border-b border-base-content/10 pb-3 mb-3">
-                <div role="tablist" class="tabs tabs-boxed bg-base-200/50 p-1 rounded-xl">
-                    <button role="tab" class="tab font-bold text-xs" onclick="switchTab('tab-flight', this)">🛫 촬영일자</button>
-                    <button role="tab" class="tab font-bold text-xs" onclick="switchTab('tab-block', this)">🧩 블럭 관리</button>
-                    <button role="tab" class="tab font-bold text-xs" onclick="switchTab('tab-security', this)">🛡️ 보안성검토</button>
-                    <button role="tab" class="tab font-bold text-xs" onclick="switchTab('tab-qa', this)">🔬 품질검수</button>
-                </div>
-                <div id="tab-action-container"></div>
-            </div>
+    <div class="flex items-center gap-3">
+        <div role="tablist" class="tabs tabs-boxed bg-base-200/50 p-1 rounded-xl">
+            <button role="tab" class="tab font-bold text-xs" onclick="switchTab('tab-flight', this)">🛫 촬영일자</button>
+            <button role="tab" class="tab font-bold text-xs" onclick="switchTab('tab-block', this)">🧩 블럭 관리</button>
+            <button role="tab" class="tab font-bold text-xs" onclick="switchTab('tab-security', this)">🛡️ 보안성검토</button>
+            <button role="tab" class="tab font-bold text-xs" onclick="switchTab('tab-qa', this)">🔬 품질검수</button>
+        </div>
+
+        <!-- 📏 행 높이(밀도) 조절 세그먼트 버튼 -->
+        <div class="join bg-base-200/60 p-0.5 rounded-xl border border-base-content/10">
+            <button type="button" class="btn btn-xs join-item density-btn font-bold text-[11px]" data-size="table-xs" onclick="setTableDensity('table-xs', this)">축소</button>
+            <button type="button" class="btn btn-xs join-item density-btn font-bold text-[11px]" data-size="table-sm" onclick="setTableDensity('table-sm', this)">기본</button>
+            <button type="button" class="btn btn-xs join-item density-btn font-bold text-[11px]" data-size="table-md" onclick="setTableDensity('table-md', this)">확대</button>
+        </div>
+    </div>
+    
+    <div id="tab-action-container"></div>
+</div>
 
             <!-- 서브 뷰 컴포넌트들 -->
             <?php 
@@ -357,6 +367,35 @@ if ($b_res) {
         (function initTheme() {
             applyTheme(localStorage.getItem('app-theme') || 'dark');
         })();
+        function setTableDensity(densityClass, btnElement) {
+    // 모든 동적 테이블에 클래스 교체 적용
+    const tables = document.querySelectorAll('.dynamic-density-table');
+    tables.forEach(tbl => {
+        tbl.classList.remove('table-xs', 'table-sm', 'table-md', 'table-lg');
+        tbl.classList.add(densityClass);
+    });
+
+    // 버튼 활성 스타일 업데이트
+    document.querySelectorAll('.density-btn').forEach(b => {
+        b.classList.remove('btn-primary', 'text-white');
+        b.classList.add('btn-ghost');
+    });
+
+    if (btnElement) {
+        btnElement.classList.remove('btn-ghost');
+        btnElement.classList.add('btn-primary', 'text-white');
+    }
+
+    // 사용자 로컬 스토리지에 저장 (새로고침 시 유지)
+    localStorage.setItem('app-table-density', densityClass);
+}
+
+// 페이지 로드 시 저장된 행 크기 적용
+document.addEventListener('DOMContentLoaded', () => {
+    const savedDensity = localStorage.getItem('app-table-density') || 'table-sm';
+    const targetBtn = document.querySelector(`.density-btn[data-size="${savedDensity}"]`) || document.querySelectorAll('.density-btn')[1];
+    setTableDensity(savedDensity, targetBtn);
+});
     </script>
 </body>
 </html>
