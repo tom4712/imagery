@@ -76,6 +76,10 @@ if ($active_dwg_file) {
         $cur_color       = null;
         $cur_text        = '';
         $cur_radius      = 50.0;
+        $cur_height      = 150.0;
+        $cur_rotation    = 0.0;
+        $cur_align_h     = 0;
+        $cur_align_v     = 0;
         $x10 = null; $y20 = null;
         $x11 = null; $y21 = null;
         $poly_pts = [];
@@ -84,18 +88,22 @@ if ($active_dwg_file) {
         $cur_layer_color = 7;
         $cur_layer_flags = 0;
 
-        // 구식 POLYLINE(R12) 파싱용 상태 - VERTEX들을 모아 LWPOLYLINE과 동일한 형태로 변환
         $in_old_poly    = false;
         $old_poly_layer = '';
+        $old_poly_color = null;
         $old_poly_pts   = [];
 
-        $save_entity = function() use (&$cur_entity_type, &$cur_layer, &$cur_color, &$x10, &$y20, &$x11, &$y21, &$cur_text, &$cur_radius, &$poly_pts, &$entities) {
+        $save_entity = function() use (
+            &$cur_entity_type, &$cur_layer, &$cur_color, &$x10, &$y20, &$x11, &$y21, 
+            &$cur_text, &$cur_radius, &$cur_height, &$cur_rotation, &$cur_align_h, &$cur_align_v, 
+            &$poly_pts, &$entities
+        ) {
             if (!$cur_entity_type) return;
 
             $item = [
-                'type'  => $cur_entity_type,
-                'layer' => $cur_layer ?: '0',
-                'color' => $cur_color
+                'type'     => $cur_entity_type,
+                'layer'    => $cur_layer ?: '0',
+                'color'    => $cur_color
             ];
 
             if ($cur_entity_type === 'LINE' && $x10 !== null && $x11 !== null) {
@@ -106,18 +114,22 @@ if ($active_dwg_file) {
                 $item['points'] = $poly_pts;
                 $entities[] = $item;
             } else if ($cur_entity_type === 'CIRCLE' && $x10 !== null) {
-                $item['x'] = $x10; $item['y'] = $y20;
-                $item['r'] = $cur_radius;
+                $item['x']      = $x10; 
+                $item['y']      = $y20;
+                $item['radius'] = $cur_radius ?: 50.0;
                 $entities[] = $item;
-            } else if ($cur_entity_type === 'TEXT' && $cur_text !== '') {
-                $tx = ($x11 !== null && $x11 != 0) ? $x11 : $x10;
-                $ty = ($y21 !== null && $y21 != 0) ? $y21 : $y20;
-                if ($tx !== null && $ty !== null) {
-                    $item['x'] = $tx; $item['y'] = $ty;
-                    $item['text'] = $cur_text;
-                    $item['is_reshoot'] = (strpos($cur_layer, '_A') !== false || preg_match('/[a-zA-Z]$/', $cur_text));
-                    $entities[] = $item;
-                }
+            } else if (($cur_entity_type === 'TEXT' || $cur_entity_type === 'MTEXT') && $cur_text !== '') {
+                $item['x']          = $x10 ?? 0;
+                $item['y']          = $y20 ?? 0;
+                $item['align_x']    = $x11;
+                $item['align_y']    = $y21;
+                $item['height']     = $cur_height ?: 150.0;
+                $item['rotation']   = $cur_rotation ?: 0.0;
+                $item['align_h']    = $cur_align_h;
+                $item['align_v']    = $cur_align_v;
+                $item['text']       = $cur_text;
+                $item['is_reshoot'] = (strpos($cur_layer, '_A') !== false || preg_match('/[a-zA-Z]$/', $cur_text));
+                $entities[] = $item;
             }
         };
 
@@ -142,24 +154,22 @@ if ($active_dwg_file) {
             $code = trim($lines[$i]);
             $val  = isset($lines[$i + 1]) ? trim($lines[$i + 1]) : '';
 
-            // 1. 섹션 헤더 식별 (0: SECTION, 2: SECTION_NAME)
             if ($code === '2') {
                 if ($current_section === 'SECTION_INIT') {
-                    $current_section = strtoupper($val); // TABLES, ENTITIES, HEADER 등
+                    $current_section = strtoupper($val);
                     continue;
                 }
                 if ($current_section === 'TABLES' && $current_table === 'TABLE_INIT') {
-                    $current_table = strtoupper($val); // LAYER, LTYPE 등
+                    $current_table = strtoupper($val);
                     continue;
                 }
             }
 
             if ($code === '0') {
-                // 이전 엔티티 또는 레이어 저장
                 if ($current_section === 'ENTITIES') {
                     if ($cur_entity_type === 'POLYLINE') {
-                        // POLYLINE 헤더 블록이 방금 끝남 -> 레이어만 기억해두고, 실제 점은 VERTEX에서 수집
                         $old_poly_layer = $cur_layer ?: '0';
+                        $old_poly_color = $cur_color;
                     } else if ($cur_entity_type === 'VERTEX' && $in_old_poly) {
                         if ($x10 !== null && $y20 !== null) {
                             $old_poly_pts[] = ['x' => $x10, 'y' => $y20];
@@ -174,13 +184,14 @@ if ($active_dwg_file) {
                 if ($val === 'POLYLINE') {
                     $in_old_poly    = true;
                     $old_poly_layer = '';
+                    $old_poly_color = null;
                     $old_poly_pts   = [];
                 } else if ($val === 'SEQEND' && $in_old_poly) {
                     if (!empty($old_poly_pts)) {
                         $entities[] = [
                             'type'   => 'LWPOLYLINE',
                             'layer'  => $old_poly_layer ?: '0',
-                            'color'  => null,
+                            'color'  => $old_poly_color,
                             'points' => $old_poly_pts
                         ];
                     }
@@ -199,12 +210,15 @@ if ($active_dwg_file) {
                     $current_table = '';
                 }
 
-                // 새 엔티티/레이어 버퍼 초기화
                 $cur_entity_type = $val;
                 $cur_layer       = '0';
                 $cur_color       = null;
                 $cur_text        = '';
                 $cur_radius      = 50.0;
+                $cur_height      = 150.0;
+                $cur_rotation    = 0.0;
+                $cur_align_h     = 0;
+                $cur_align_v     = 0;
                 $x10 = null; $y20 = null;
                 $x11 = null; $y21 = null;
                 $poly_pts = [];
@@ -215,18 +229,25 @@ if ($active_dwg_file) {
                 continue;
             }
 
-            // 2. 레이어 테이블 파싱
+            // LAYER 테이블
             if ($current_section === 'TABLES' && $current_table === 'LAYER') {
                 if ($code === '2')  $cur_layer_name = $val;
                 if ($code === '62') $cur_layer_color = (int)$val;
                 if ($code === '70') $cur_layer_flags = (int)$val;
             }
 
-            // 3. 엔티티 데이터 파싱
+            // ENTITIES 데이터
             if ($current_section === 'ENTITIES') {
                 if ($code === '8')  $cur_layer = $val;
                 if ($code === '62') $cur_color = (int)$val;
-                if ($code === '40') $cur_radius = (float)$val;
+                if ($code === '40') {
+                    $cur_radius = (float)$val;
+                    $cur_height = (float)$val;
+                }
+                if ($code === '50') $cur_rotation = (float)$val;
+                if ($code === '72') $cur_align_h  = (int)$val;
+                if ($code === '73') $cur_align_v  = (int)$val;
+
                 if ($code === '10') {
                     $x10 = (float)$val;
                 }
@@ -248,20 +269,19 @@ if ($active_dwg_file) {
             }
         }
 
-        // 마지막 요소 저장
         if ($current_section === 'ENTITIES') $save_entity();
         if ($current_section === 'TABLES' && $current_table === 'LAYER') $save_layer();
     }
 }
 
-// 4. 엔티티에 사용된 레이어 색상 보정
+// 4. 엔티티별 개별 지정 색상 및 기본 레이어 색상 맵핑
 foreach ($entities as $e) {
     $ln = $e['layer'];
     if (!isset($layers[$ln])) {
         $c_hex = '#ffffff';
         if ($e['color'] && isset($aci_colors[$e['color']])) {
             $c_hex = $aci_colors[$e['color']];
-        } else if (str_contains($ln, 'INDEX')) {
+        } else if (str_contains($ln, 'INDEX') || str_contains($ln, '50000')) {
             $c_hex = '#60a5fa'; // Blue
         } else if (str_contains($ln, '_A')) {
             $c_hex = '#eab308'; // Yellow

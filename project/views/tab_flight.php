@@ -97,7 +97,7 @@ if (!isset($base_dir)) {
 
                         $date_dir = $base_dir . '\\date\\' . $date_str;
                         
-                        // 1. EO 파일 스캔 (PHP 8.2 순수 UTF-8)
+                        // 1. EO 파일 스캔
                         $eo_dir = $date_dir . '\\EO';
                         $eo_files = [];
                         if (is_dir($eo_dir)) {
@@ -111,7 +111,7 @@ if (!isset($base_dir)) {
                         $eo_filename = !empty($eo_files) ? reset($eo_files) : ($row['eo_file_name'] ?: '');
                         $eo_count = count($eo_files);
 
-                        // 2. INDEX 도면 스캔 (PHP 8.2 순수 UTF-8)
+                        // 2. INDEX 도면 스캔
                         $idx_dir = $date_dir . '\\INDEX';
                         $idx_files = [];
                         if (is_dir($idx_dir)) {
@@ -125,7 +125,7 @@ if (!isset($base_dir)) {
                         $idx_filename = !empty($idx_files) ? reset($idx_files) : '';
                         $idx_count = count($idx_files);
 
-                        // 3. 문서 파일 스캔 (PHP 8.2 순수 UTF-8)
+                        // 3. 문서 파일 스캔
                         $doc_dir = $date_dir . '\\문서';
                         $doc_files = [];
                         if (is_dir($doc_dir)) {
@@ -235,14 +235,17 @@ if (!isset($base_dir)) {
                                         <?php } ?>
                                     </div>
 
-                                    <!-- 📑 문서 배지 -->
-                                    <div class="flex items-center gap-1.5 bg-base-200/80 border border-base-content/10 rounded-lg px-2.5 py-1.5 shadow-sm">
+                                    <!-- 📑 문서 배지: 더블클릭 시 문서 관리 모달 오픈 (💡 prj_id 매개변수 추가 수정됨) -->
+                                    <div class="flex items-center gap-1.5 bg-base-200/80 border border-base-content/10 rounded-lg px-2.5 py-1.5 shadow-sm cursor-pointer hover:border-accent transition-colors group/doc"
+                                         title="더블클릭하여 촬영기록부 및 코스별검사표 관리"
+                                         ondblclick="event.stopPropagation(); openDocManagerModal(<?php echo $prj_id; ?>, <?php echo $row['date_id'] ?? $row['id']; ?>, '<?php echo htmlspecialchars($row['flight_date'] ?? $row['date'] ?? ''); ?>');"
                                         <span class="text-sm">📑</span>
                                         <span class="font-bold text-xs text-base-content/70">문서:</span>
                                         <?php if($doc_count > 0) { ?>
                                             <span class="badge badge-accent badge-sm font-mono text-[11px] font-bold"><?php echo $doc_count; ?>건 등록됨</span>
+                                            <span class="text-[10px] text-accent opacity-0 group-hover/doc:opacity-100 transition-opacity font-bold ml-1">⚡ 더블클릭</span>
                                         <?php } else { ?>
-                                            <span class="badge badge-ghost badge-sm text-[11px] opacity-60">0건</span>
+                                            <span class="badge badge-ghost badge-sm text-[11px] opacity-60">0건 (더블클릭)</span>
                                         <?php } ?>
                                     </div>
                                 </div>

@@ -73,6 +73,14 @@ switch ($action) {
     case 'generate_index_dwg':
         include_once('./actions/act_flight_index.php');
         break;
+    case 'generate_index_dwg':
+    case 'delete_index_file': // 💡 추가
+        include_once('./actions/act_flight_index.php');
+        break;
+    case 'get_doc_file_list':
+    case 'create_doc_from_template':
+        include_once('./actions/act_flight_doc.php');
+        break;
     default:
         action_goto_url(G5_URL.'/project/view.php?id='.$prj_id);
         break;

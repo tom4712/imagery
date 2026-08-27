@@ -117,7 +117,6 @@
 <!-- 3. EO 데이터 검증 & 엑셀 화면 프리뷰 모달 -->
 <dialog id="modal_eo_preview" class="modal z-[220]">
     <div class="modal-box bg-base-100 border border-base-content/10 shadow-2xl rounded-2xl max-w-5xl w-11/12 h-[85vh] flex flex-col p-6">
-        
         <div class="flex justify-between items-center pb-3 border-b border-base-content/10">
             <div class="flex items-center gap-3">
                 <span class="text-2xl">📊</span>
@@ -129,7 +128,6 @@
                     <p class="text-[11px] text-base-content/60" id="preview_filename">파일명: -</p>
                 </div>
             </div>
-
             <div class="flex items-center gap-1.5" id="preview_matched_blocks"></div>
         </div>
 
@@ -153,7 +151,6 @@
             </table>
         </div>
 
-        <!-- 최종 DB 반영 폼 (서버 파일 선택 모드 시 전송) -->
         <form id="form_apply_eo_to_db" method="post" action="action.php">
             <input type="hidden" name="action" value="apply_selected_eo_file">
             <input type="hidden" name="prj_id" value="<?php echo $prj_id; ?>">
@@ -174,7 +171,6 @@
                 </button>
             </div>
         </div>
-
     </div>
     <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
@@ -239,15 +235,164 @@
     <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
 
+<!-- 6. 촬영기록부 문서 관리 모달 -->
+<dialog id="modal_doc_manager" class="modal">
+    <div class="modal-box bg-slate-900 border border-white/10 max-w-2xl rounded-2xl shadow-2xl p-6">
+        <div class="flex items-center justify-between border-b border-white/10 pb-4 mb-4">
+            <div class="flex items-center gap-2.5">
+                <span class="text-2xl">📋</span>
+                <div>
+                    <h3 class="font-bold text-base text-white">촬영기록부 문서 관리</h3>
+                    <p class="text-xs text-slate-400" id="doc_modal_flight_info">-</p>
+                </div>
+            </div>
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost text-slate-400 hover:text-white">✕</button>
+            </form>
+        </div>
+
+        <!-- 문서 목록 테이블 -->
+        <div class="overflow-x-auto min-h-[160px] max-h-[320px] custom-scrollbar">
+            <table class="table table-sm w-full">
+                <thead>
+                    <tr class="text-slate-400 text-xs border-b border-white/10">
+                        <th>문서 파일명</th>
+                        <th class="w-24">용량</th>
+                        <th class="w-32">수정일시</th>
+                        <th class="w-32 text-right">관리</th>
+                    </tr>
+                </thead>
+                <tbody id="doc_manager_tbody">
+                    <tr>
+                        <td colspan="4" class="text-center py-8 text-slate-500 text-xs">
+                            <span class="loading loading-spinner loading-sm"></span> 문서 목록을 조회 중...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="modal-action border-t border-white/10 pt-4 mt-4">
+            <form method="dialog">
+                <button class="btn btn-sm btn-ghost rounded-xl text-xs font-bold text-slate-300">닫기</button>
+            </form>
+        </div>
+    </div>
+</dialog>
+
+<!-- 통합 스크립트 영역 -->
 <script>
+// ==========================================
+// 1. 촬영기록부 문서 관리 모달 로직
+// ==========================================
+let currentDocPrjId = 0;
+let currentDocDateId = 0;
+
+function openDocManagerModal(prjId, dateId, flightDate) {
+    currentDocPrjId = prjId;
+    currentDocDateId = dateId;
+
+    document.getElementById('doc_modal_flight_info').innerText = `촬영일자: ${flightDate}`;
+    const modal = document.getElementById('modal_doc_manager');
+    if (modal) modal.showModal();
+
+    loadDocumentList(prjId, dateId);
+}
+
+async function loadDocumentList(prjId, dateId) {
+    const tbody = document.getElementById('doc_manager_tbody');
+    tbody.innerHTML = `<tr><td colspan="4" class="text-center py-8 text-slate-500 text-xs"><span class="loading loading-spinner loading-sm"></span> 목록 불러오는 중...</td></tr>`;
+
+    try {
+        const res = await fetch(`./ajax_get_doc_list.php?prj_id=${prjId}&date_id=${dateId}`);
+        
+        if (!res.ok) {
+            throw new Error(`HTTP ${res.status} (${res.statusText}) - ajax_get_doc_list.php 파일 위치를 확인하세요.`);
+        }
+
+        const result = await res.json();
+
+        if (result.status !== 'success') {
+            tbody.innerHTML = `<tr><td colspan="4" class="text-center py-8 text-rose-400 font-bold text-xs">${result.message}</td></tr>`;
+            return;
+        }
+
+        if (!result.data || result.data.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="4" class="text-center py-8 text-slate-500 font-bold text-xs">등록된 촬영기록부 문서가 없습니다.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = '';
+        result.data.forEach(doc => {
+            const tr = document.createElement('tr');
+            tr.className = 'hover:bg-slate-800/40 border-b border-white/5';
+            tr.innerHTML = `
+                <td class="font-mono text-xs font-bold text-white flex items-center gap-2 py-3">
+                    <span class="text-emerald-400">📊</span>
+                    <span>${doc.filename}</span>
+                </td>
+                <td class="text-xs text-slate-400 font-mono">${doc.filesize}</td>
+                <td class="text-xs text-slate-400 font-mono">${doc.updated_at}</td>
+                <td class="text-right">
+                    <div class="flex items-center justify-end gap-1.5">
+                        <a href="./doc_editor.php?prj_id=${prjId}&date_id=${dateId}&filename=${encodeURIComponent(doc.filename)}" 
+                           class="btn btn-xs btn-primary rounded-lg font-bold gap-1 text-[11px] shadow-sm shadow-primary/20">
+                            <i class="fa-regular fa-pen-to-square"></i>
+                            <span>수정</span>
+                        </a>
+                        <button type="button" 
+                                class="btn btn-xs btn-error btn-outline rounded-lg font-bold gap-1 text-[11px]" 
+                                onclick="deleteDocumentItem('${doc.filename}')">
+                            <i class="fa-regular fa-trash-can"></i>
+                            <span>삭제</span>
+                        </button>
+                    </div>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="4" class="text-center py-8 text-rose-400 font-bold text-xs">${err.message}</td></tr>`;
+    }
+}
+
+async function deleteDocumentItem(filename) {
+    if (!confirm(`정말로 [ ${filename} ] 파일을 삭제하시겠습니까?\n삭제된 문서는 복구할 수 없습니다.`)) {
+        return;
+    }
+
+    try {
+        const res = await fetch('./ajax_delete_doc.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                prj_id: currentDocPrjId,
+                date_id: currentDocDateId,
+                filename: filename
+            })
+        });
+
+        const result = await res.json();
+        if (result.status === 'success') {
+            loadDocumentList(currentDocPrjId, currentDocDateId);
+        } else {
+            alert('삭제 실패: ' + result.message);
+        }
+    } catch (e) {
+        alert('삭제 통신 중 오류가 발생했습니다.');
+    }
+}
+
+// ==========================================
+// 2. EO 데이터 등록 & 피커 & 프리뷰 로직
+// ==========================================
 var currentParsedEO = [];
 var currentMatchedBlocks = [];
 var isBlockRegistered = true;
 var currentPickerDateId = 0;
 var currentSelectedPickerFile = '';
-var previewMode = 'UPLOAD'; // 'UPLOAD' (새로 등록) 또는 'PICKER' (기존 폴더 파일 선택)
+var previewMode = 'UPLOAD';
 
-// [더블클릭] EO 파일 목록 가져오기 및 모달 열기
 function openEOFilePicker(dateId, dateStr) {
     currentPickerDateId = dateId;
     currentSelectedPickerFile = '';
@@ -306,7 +451,6 @@ function openEOFilePicker(dateId, dateStr) {
         });
 }
 
-// 선택 파일 비동기 내용 로드 -> 프리뷰 엑셀 모달 열기
 function proceedToEOPreview() {
     if (!currentSelectedPickerFile) return;
 
@@ -342,13 +486,12 @@ function proceedToEOPreview() {
         });
 }
 
-// 데이터 정규화 및 블럭 매칭
 function processRawData(rows) {
     currentParsedEO = [];
     const courseSet = new Set();
 
     rows.forEach(row => {
-        if (!row || row.length < 9) return;
+        if (!row || row.length < 8) return;
         
         const id = String(row[0]).trim();
         if (!id || id.toLowerCase().includes('id') || id.toLowerCase().includes('photo')) return;
@@ -515,6 +658,9 @@ function applyEODataToForm() {
     document.getElementById('btn_reopen_preview').classList.remove('hidden');
 }
 
+// ==========================================
+// 3. 검수내역 및 촬영일 삭제 로직
+// ==========================================
 function openFlightInspectModal(dateId, dateStr, total, used, unused, reshoot) {
     document.getElementById('inspect_date_id').value = dateId;
     document.getElementById('inspect_target_date').innerText = `촬영일자: ${dateStr}`;

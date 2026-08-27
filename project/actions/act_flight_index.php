@@ -512,3 +512,35 @@ if ($action === 'generate_index_dwg') {
 
     goto_url(G5_URL.'/project/index_view.php?prj_id='.$prj_id.'&date_id='.$date_id.'&active_file='.urlencode($index_name).'&toast=index_ok');
 }
+
+if ($action === 'delete_index_file') {
+    $filename = isset($_REQUEST['filename']) ? trim($_REQUEST['filename']) : '';
+    
+    // 상위 디렉터리 탐색 방지 (보안)
+    $filename = basename($filename);
+
+    if (!$filename) {
+        action_error_toast($prj_id, 'tab-flight', '삭제할 파일명이 올바르지 않습니다.');
+    }
+
+    $flight = sql_fetch(" SELECT * FROM IMG_FLIGHT_DATE WHERE date_id = {$date_id} AND prj_id = {$prj_id} ");
+    if (!$flight) {
+        action_error_toast($prj_id, 'tab-flight', '촬영일 정보를 찾을 수 없습니다.');
+    }
+
+    $index_dir = 'E:\#KYS_IMAGERY_SERVER\\' . trim($prj['prj_name']) . '\\date\\' . trim($flight['flight_date']) . '\\INDEX';
+    $target_file = $index_dir . '\\' . $filename;
+    $enc_path = (mb_detect_encoding($target_file, 'UTF-8', true)) ? iconv('UTF-8', 'CP949//IGNORE', $target_file) : $target_file;
+
+    // 1. 실제 물리 파일 삭제
+    if (file_exists($enc_path) && is_file($enc_path)) {
+        @chmod($enc_path, 0777);
+        @unlink($enc_path);
+    }
+
+    // 2. DB 동기화 (해당 인덱스 레코드 삭제)
+    sql_query(" DELETE FROM IMG_FLIGHT_INDEX WHERE prj_id = {$prj_id} AND date_id = {$date_id} AND file_name = '" . sql_real_escape_string($filename) . "' ");
+
+    // 3. 리다이렉트
+    action_goto_url(G5_URL . '/project/index_view.php?prj_id=' . $prj_id . '&date_id=' . $date_id);
+}
