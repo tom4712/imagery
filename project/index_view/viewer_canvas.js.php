@@ -17,7 +17,7 @@ let lastWheelClickTime = 0;
 
 let minX = 0, maxX = 0, minY = 0, maxY = 0, centerX = 0, centerY = 0;
 
-// 레이어 관리 UI 렌더링
+// 레이어 관리 UI 렌더링 (기존 유지)
 function initLayerManagerUI() {
     const container = document.getElementById('layer_list_container');
     if (!container) return;
@@ -73,7 +73,7 @@ function toggleLayerPanel() {
     if (panel) panel.classList.toggle('hidden');
 }
 
-// 바운딩 박스 계산
+// 바운딩 박스 계산 (기존 유지)
 function calculateBounds() {
     let pts = [];
     rawEntities.forEach(e => {
@@ -104,7 +104,7 @@ function calculateBounds() {
     return true;
 }
 
-// 뷰포트 맞춤
+// 뷰포트 맞춤 (기존 유지)
 function fitView(animate = false) {
     if (!canvas) return;
 
@@ -129,7 +129,7 @@ function fitView(animate = false) {
     draw();
 }
 
-// 메인 렌더링 루프
+// 메인 렌더링 루프 (텍스트 회전 및 개별 크기 보정 완료)
 function draw() {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -137,14 +137,7 @@ function draw() {
 
     ctx.save();
     ctx.translate(canvas.width / 2 + panX, canvas.height / 2 + panY);
-    ctx.scale(scale, -scale); // CAD Y축 상향 반전
-
-    
-
-    // 2. CAD 엔티티 렌더링
-    const screenTextSize = 150 * scale;
-    const showPhotoText = screenTextSize > 4;
-    const dotRadius = Math.max(30, 2 / scale);
+    ctx.scale(scale, -scale); // CAD Y축 상향 좌표계 설정
 
     rawEntities.forEach(e => {
         const l = layerState[e.layer];
@@ -169,33 +162,64 @@ function draw() {
             ctx.strokeStyle = color;
             ctx.stroke();
         } else if (e.type === 'CIRCLE') {
+            // CAD 객체의 실제 반지름(e.radius 또는 e.r) 반영
+            const realRadius = parseFloat(e.radius || e.r || 50.0);
             ctx.beginPath();
-            ctx.arc(e.x - centerX, e.y - centerY, dotRadius, 0, Math.PI * 2);
+            ctx.arc(e.x - centerX, e.y - centerY, realRadius, 0, Math.PI * 2);
             ctx.fillStyle = color;
             ctx.fill();
-        } else if (e.type === 'TEXT') {
-            const px = e.x - centerX;
-            const py = e.y - centerY;
+            ctx.lineWidth = Math.max(1, 1.0 / scale);
+            ctx.strokeStyle = color;
+            ctx.stroke();
+        } else if (e.type === 'TEXT' || e.type === 'MTEXT') {
+            // 1. DXF 정렬 좌표(align_x, align_y) 존재 시 해당 좌표를 기준점으로 사용
+            const hasAlign = (e.align_x !== undefined && e.align_x !== null && (e.align_x !== 0 || e.align_y !== 0));
+            const px = (hasAlign ? parseFloat(e.align_x) : parseFloat(e.x)) - centerX;
+            const py = (hasAlign ? parseFloat(e.align_y) : parseFloat(e.y)) - centerY;
 
-            if (e.layer === 'INDEX_50K') {
+            // 2. CAD 도면에 정의된 객체별 각각의 높이(e.height)와 회전 각도(e.rotation) 추출
+            const cadHeight   = parseFloat(e.height) || 150.0;
+            const cadRotation = parseFloat(e.rotation) || 0.0; // CAD 회전각 (Degree)
+
+            // 화면 표시 크기가 유효할 때만 렌더링
+            if (cadHeight * scale > 0.5) {
                 ctx.save();
+                
+                // [핵심] CAD 원본 좌표 위치로 이동
                 ctx.translate(px, py);
-                ctx.scale(1 / scale, -1 / scale);
-                ctx.font = 'bold 14px sans-serif';
+
+                // [핵심 연산 보정] 
+                // Canvas Y축 반전(-scale) 상황에서 CAD 회전을 시계 반대 방향(+) 그대로 맞추기 위해 -rot 연산 적용
+                const rad = -cadRotation * (Math.PI / 180.0);
+                ctx.rotate(rad);
+
+                // 글자가 상하 반전되어 뒤집히는 것을 방지하기 위해 텍스트 렌더링 직전 Y축 -1 스케일링
+                ctx.scale(1, -1);
+
+                // 객체 본연의 CAD 문자 높이(cadHeight)를 그대로 적용
+                ctx.font = `bold ${cadHeight}px "Malgun Gothic", sans-serif`;
                 ctx.fillStyle = color;
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
+
+                // 3. DXF Group 72, 73 정렬 코드 1:1 매핑
+                let alignH = 'left';
+                let baselineV = 'bottom';
+
+                const hCode = parseInt(e.align_h || 0);
+                const vCode = parseInt(e.align_v || 0);
+
+                if (hCode === 1 || hCode === 4) alignH = 'center';
+                else if (hCode === 2) alignH = 'right';
+
+                // Y축을 -1로 뒤집었으므로 top과 bottom 매핑 반전 보정
+                if (vCode === 1) baselineV = 'bottom';
+                else if (vCode === 2 || hCode === 4) baselineV = 'middle';
+                else if (vCode === 3) baselineV = 'top';
+
+                ctx.textAlign = alignH;
+                ctx.textBaseline = baselineV;
+
+                // 기준점 (0,0)에 원본 문자를 그대로 그리기
                 ctx.fillText(e.text, 0, 0);
-                ctx.restore();
-            } else if (showPhotoText) {
-                ctx.save();
-                ctx.translate(px, py);
-                ctx.scale(1 / scale, -1 / scale);
-                ctx.rotate(-Math.PI / 4);
-                const displayFontSize = Math.max(9, Math.min(22, screenTextSize));
-                ctx.font = `bold ${displayFontSize}px monospace`;
-                ctx.fillStyle = color;
-                ctx.fillText(e.text, 10, -4);
                 ctx.restore();
             }
         }
@@ -215,7 +239,6 @@ function initViewer() {
 window.addEventListener('load', initViewer);
 window.addEventListener('resize', () => fitView(false));
 
-// 즉시 실행 트리거
 if (document.readyState === 'complete' || document.readyState === 'interactive') {
     setTimeout(initViewer, 50);
 }
