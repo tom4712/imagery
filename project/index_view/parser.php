@@ -12,10 +12,10 @@ if (is_dir($index_dir)) {
     $files = scandir($index_dir);
     foreach ($files as $f) {
         if ($f === '.' || $f === '..') continue;
-        
+
         $full_fpath = $index_dir . '\\' . $f;
         $ext = strtolower(pathinfo($f, PATHINFO_EXTENSION));
-        
+
         if (in_array($ext, ['dwg', 'dxf', 'json', 'geojson']) && is_file($full_fpath)) {
             $dwg_files[] = [
                 'filename'  => $f,
@@ -67,10 +67,10 @@ if ($active_dwg_file) {
     if (file_exists($target_dxf_path)) {
         $lines = file($target_dxf_path, FILE_IGNORE_NEW_LINES);
         $total_lines = count($lines);
-        
+
         $current_section = '';
         $current_table   = '';
-        
+
         $cur_entity_type = '';
         $cur_layer       = '0';
         $cur_color       = null;
@@ -83,6 +83,11 @@ if ($active_dwg_file) {
         $cur_layer_name  = '';
         $cur_layer_color = 7;
         $cur_layer_flags = 0;
+
+        // 구식 POLYLINE(R12) 파싱용 상태 - VERTEX들을 모아 LWPOLYLINE과 동일한 형태로 변환
+        $in_old_poly    = false;
+        $old_poly_layer = '';
+        $old_poly_pts   = [];
 
         $save_entity = function() use (&$cur_entity_type, &$cur_layer, &$cur_color, &$x10, &$y20, &$x11, &$y21, &$cur_text, &$cur_radius, &$poly_pts, &$entities) {
             if (!$cur_entity_type) return;
@@ -152,9 +157,34 @@ if ($active_dwg_file) {
             if ($code === '0') {
                 // 이전 엔티티 또는 레이어 저장
                 if ($current_section === 'ENTITIES') {
-                    $save_entity();
+                    if ($cur_entity_type === 'POLYLINE') {
+                        // POLYLINE 헤더 블록이 방금 끝남 -> 레이어만 기억해두고, 실제 점은 VERTEX에서 수집
+                        $old_poly_layer = $cur_layer ?: '0';
+                    } else if ($cur_entity_type === 'VERTEX' && $in_old_poly) {
+                        if ($x10 !== null && $y20 !== null) {
+                            $old_poly_pts[] = ['x' => $x10, 'y' => $y20];
+                        }
+                    } else {
+                        $save_entity();
+                    }
                 } else if ($current_section === 'TABLES' && $current_table === 'LAYER') {
                     $save_layer();
+                }
+
+                if ($val === 'POLYLINE') {
+                    $in_old_poly    = true;
+                    $old_poly_layer = '';
+                    $old_poly_pts   = [];
+                } else if ($val === 'SEQEND' && $in_old_poly) {
+                    if (!empty($old_poly_pts)) {
+                        $entities[] = [
+                            'type'   => 'LWPOLYLINE',
+                            'layer'  => $old_poly_layer ?: '0',
+                            'color'  => null,
+                            'points' => $old_poly_pts
+                        ];
+                    }
+                    $in_old_poly = false;
                 }
 
                 if ($val === 'SECTION') {

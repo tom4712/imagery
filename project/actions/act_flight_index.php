@@ -45,7 +45,17 @@ function parse_xlsx_rows($file_path) {
 }
 
 /**
- * 5만 도엽 Base DXF 완전 무결 파서 (모든 도곽을 100% 로드하고 원본 텍스트 매핑)
+ * CP949 인코딩 변환 헬퍼 (병합 DXF 출력용)
+ */
+function to_cp949($utf8_str) {
+    $r = @iconv('UTF-8', 'CP949//IGNORE', (string)$utf8_str);
+    return ($r !== false) ? $r : $utf8_str;
+}
+
+/**
+ * 5만 도엽 Base DXF 파서
+ * - ENTITIES 섹션 판정 버그 수정 (기존: code=0 값으로 'ENTITIES'를 찾아 영구 미진입)
+ * - 폴리곤 전체 정점(poly_points)과 TEXT 원본 좌표(no_pos/name_pos)까지 반환
  */
 function extract_base_map_sheets($crs_type, $eo_min_x, $eo_max_x, $eo_min_y, $eo_max_y, &$debug_info = []) {
     $crs_map = [
@@ -54,8 +64,7 @@ function extract_base_map_sheets($crs_type, $eo_min_x, $eo_max_x, $eo_min_y, $eo
         'EPSG:5185' => 'west_50k.dxf'
     ];
     $base_filename = $crs_map[$crs_type] ?? 'mid_50k.dxf';
-    
-    // Windows 및 웹루트 다각도 경로 탐색
+
     $try_paths = [
         'C:\xampp\htdocs\imagery\project\base\\' . $base_filename,
         dirname(__DIR__) . DIRECTORY_SEPARATOR . 'base' . DIRECTORY_SEPARATOR . $base_filename,
@@ -65,93 +74,118 @@ function extract_base_map_sheets($crs_type, $eo_min_x, $eo_max_x, $eo_min_y, $eo
 
     $base_filepath = '';
     foreach ($try_paths as $tp) {
-        if (file_exists($tp) && is_readable($tp)) {
-            $base_filepath = $tp;
-            break;
-        }
+        if (file_exists($tp) && is_readable($tp)) { $base_filepath = $tp; break; }
     }
 
     $debug_info['target_base_file'] = $base_filename;
     $debug_info['found_base_path']  = $base_filepath ?: 'NOT_FOUND';
 
     $sheets = [];
-    if (!$base_filepath) {
-        return $sheets;
-    }
+    if (!$base_filepath) return $sheets;
 
-    // 파일 로드
     $lines = file($base_filepath, FILE_IGNORE_NEW_LINES);
     if ($lines === false) return $sheets;
-
     $total_lines = count($lines);
-    $in_entities = false;
-    
+
+    $current_section = '';
     $polygons = [];
     $sheet_numbers = [];
     $sheet_names = [];
 
     $cur_entity = '';
-    $cur_layer = '';
-    $cur_text = '';
+    $cur_layer  = '';
+    $cur_text   = '';
     $x10 = null; $y20 = null;
     $x11 = null; $y21 = null;
-    $poly_pts_x = [];
-    $poly_pts_y = [];
+    $cur_height = null; // 코드 40 (TEXT 높이)
+    $cur_rot    = null; // 코드 50 (TEXT 회전각)
+    $poly_pts = [];
 
-    // 토큰 상태 머신 파싱
+    $flush = function() use (
+        &$cur_entity, &$cur_layer, &$cur_text, &$x10, &$y20, &$x11, &$y21,
+        &$cur_height, &$cur_rot, &$poly_pts, &$polygons, &$sheet_numbers, &$sheet_names
+    ) {
+        if ($cur_entity === 'LWPOLYLINE' && $cur_layer === 'G50' && !empty($poly_pts)) {
+            $xs = array_column($poly_pts, 0);
+            $ys = array_column($poly_pts, 1);
+            $polygons[] = [
+                'min_x' => min($xs), 'max_x' => max($xs),
+                'min_y' => min($ys), 'max_y' => max($ys),
+                'points' => $poly_pts
+            ];
+        } else if ($cur_entity === 'TEXT' && $cur_text !== '') {
+            $tx = ($x11 !== null && $x11 != 0) ? $x11 : $x10;
+            $ty = ($y21 !== null && $y21 != 0) ? $y21 : $y20;
+            if ($tx !== null && $ty !== null) {
+                $rec = [
+                    'x' => $tx, 'y' => $ty, 'text' => $cur_text,
+                    'height'   => $cur_height ?? 1000.0,
+                    'rotation' => $cur_rot ?? 0.0
+                ];
+                if ($cur_layer === 'N50000' || (!$cur_layer && preg_match('/^\d{5}$/', $cur_text))) {
+                    $sheet_numbers[] = $rec;
+                } else if ($cur_layer === 'T50000' || preg_match('/[가-힣]/u', $cur_text)) {
+                    $sheet_names[] = $rec;
+                }
+            }
+        }
+    };
+
     for ($i = 0; $i < $total_lines; $i += 2) {
         if (!isset($lines[$i])) break;
         $code = trim($lines[$i]);
         $val  = isset($lines[$i + 1]) ? trim($lines[$i + 1]) : '';
 
-        if ($code === '0') {
-            if ($in_entities) {
-                if ($cur_entity === 'LWPOLYLINE' && !empty($poly_pts_x)) {
-                    $polygons[] = [
-                        'min_x' => min($poly_pts_x), 'max_x' => max($poly_pts_x),
-                        'min_y' => min($poly_pts_y), 'max_y' => max($poly_pts_y)
-                    ];
-                } else if ($cur_entity === 'TEXT' && $cur_text !== '') {
-                    $tx = ($x11 !== null && $x11 != 0) ? $x11 : $x10;
-                    $ty = ($y21 !== null && $y21 != 0) ? $y21 : $y20;
-                    
-                    if ($tx !== null && $ty !== null) {
-                        if (str_contains($cur_layer, 'N50000') || preg_match('/^\d{5}$/', $cur_text)) {
-                            $sheet_numbers[] = ['x' => $tx, 'y' => $ty, 'text' => $cur_text];
-                        } else if (str_contains($cur_layer, 'T50000') || preg_match('/[가-힣]/u', $cur_text)) {
-                            $sheet_names[] = ['x' => $tx, 'y' => $ty, 'text' => $cur_text];
-                        }
-                    }
-                }
-            }
-
-            if ($val === 'ENTITIES') { $in_entities = true; }
-            if ($val === 'ENDSEC' && $in_entities) { break; }
-
-            $cur_entity = $val;
-            $cur_layer = '';
-            $cur_text = '';
-            $x10 = null; $y20 = null;
-            $x11 = null; $y21 = null;
-            $poly_pts_x = [];
-            $poly_pts_y = [];
+        if ($code === '2' && $current_section === 'SECTION_INIT') {
+            $current_section = strtoupper($val);
             continue;
         }
 
-        if (!$in_entities) continue;
+        if ($code === '0') {
+            if ($current_section === 'ENTITIES') $flush();
+
+            if ($val === 'SECTION') {
+                $current_section = 'SECTION_INIT';
+            } else if ($val === 'ENDSEC') {
+                if ($current_section === 'ENTITIES') break;
+                $current_section = '';
+            }
+
+            $cur_entity = $val;
+            $cur_layer  = '';
+            $cur_text   = '';
+            $x10 = null; $y20 = null;
+            $x11 = null; $y21 = null;
+            $cur_height = null; $cur_rot = null;
+            $poly_pts = [];
+            continue;
+        }
+
+        if ($current_section !== 'ENTITIES') continue;
 
         if ($code === '8') {
             $cur_layer = strtoupper($val);
         } else if ($code === '10') {
-            if ($cur_entity === 'LWPOLYLINE') $poly_pts_x[] = (float)$val;
-            else $x10 = (float)$val;
+            if ($cur_entity === 'LWPOLYLINE') {
+                $poly_pts[] = [(float)$val, null];
+            } else {
+                $x10 = (float)$val;
+            }
         } else if ($code === '20') {
-            if ($cur_entity === 'LWPOLYLINE') $poly_pts_y[] = (float)$val;
-            else $y20 = (float)$val;
+            if ($cur_entity === 'LWPOLYLINE') {
+                $last = count($poly_pts) - 1;
+                if ($last >= 0) $poly_pts[$last][1] = (float)$val;
+            } else {
+                $y20 = (float)$val;
+            }
         } else if ($code === '11') {
             $x11 = (float)$val;
         } else if ($code === '21') {
             $y21 = (float)$val;
+        } else if ($code === '40') {
+            $cur_height = (float)$val; // TEXT 높이 원본값
+        } else if ($code === '50') {
+            $cur_rot = (float)$val;    // TEXT 회전각 원본값
         } else if ($code === '1') {
             if (!mb_detect_encoding($val, 'UTF-8', true)) {
                 $cur_text = trim(iconv('CP949', 'UTF-8//IGNORE', $val));
@@ -165,42 +199,41 @@ function extract_base_map_sheets($crs_type, $eo_min_x, $eo_max_x, $eo_min_y, $eo
     $debug_info['parsed_numbers']  = count($sheet_numbers);
     $debug_info['parsed_names']    = count($sheet_names);
 
-    // [핵심] 필터링 없이 DXF에 존재하는 모든 도곽을 무조건 매핑
     foreach ($polygons as $p_idx => $poly) {
-        $sheet_no = '';
-        $sheet_nm = '';
+        $sheet_no = ''; $sheet_nm = '';
+        $no_pos = null; $nm_pos = null;
 
-        // N50000 매칭
         foreach ($sheet_numbers as $sn) {
-            if ($sn['x'] >= $poly['min_x'] - 1000 && $sn['x'] <= $poly['max_x'] + 1000 && 
+            if ($sn['x'] >= $poly['min_x'] - 1000 && $sn['x'] <= $poly['max_x'] + 1000 &&
                 $sn['y'] >= $poly['min_y'] - 1000 && $sn['y'] <= $poly['max_y'] + 1000) {
                 $sheet_no = $sn['text'];
+                $no_pos = ['x' => $sn['x'], 'y' => $sn['y'], 'height' => $sn['height'], 'rotation' => $sn['rotation']];
                 break;
             }
         }
-
-        // T50000 매칭
         foreach ($sheet_names as $sm) {
-            if ($sm['x'] >= $poly['min_x'] - 2000 && $sm['x'] <= $poly['max_x'] + 2000 && 
+            if ($sm['x'] >= $poly['min_x'] - 2000 && $sm['x'] <= $poly['max_x'] + 2000 &&
                 $sm['y'] >= $poly['min_y'] - 2000 && $sm['y'] <= $poly['max_y'] + 2000) {
                 $sheet_nm = $sm['text'];
+                $nm_pos = ['x' => $sm['x'], 'y' => $sm['y'], 'height' => $sm['height'], 'rotation' => $sm['rotation']];
                 break;
             }
         }
 
-        // 번호나 이름이 누락된 도곽도 고유 식별자로 복구하여 무조건 노출
         $final_no = $sheet_no ?: ("50K_" . ($p_idx + 1));
         $final_nm = $sheet_nm ?: $final_no;
 
-        // 주점 바운딩 박스와 실제 교차 여부 판별
-        $is_direct = !($poly['max_x'] < $eo_min_x || $poly['min_x'] > $eo_max_x || 
+        $is_direct = !($poly['max_x'] < $eo_min_x || $poly['min_x'] > $eo_max_x ||
                        $poly['max_y'] < $eo_min_y || $poly['min_y'] > $eo_max_y);
 
         $sheets[] = [
-            'sheet_no'   => $final_no,
-            'sheet_name' => $final_nm,
-            'is_direct'  => $is_direct,
-            'bounds'     => $poly
+            'sheet_no'    => $final_no,
+            'sheet_name'  => $final_nm,
+            'is_direct'   => $is_direct,
+            'bounds'      => ['min_x' => $poly['min_x'], 'max_x' => $poly['max_x'], 'min_y' => $poly['min_y'], 'max_y' => $poly['max_y']],
+            'poly_points' => array_map(function ($p) { return ['x' => $p[0], 'y' => $p[1]]; }, $poly['points']),
+            'no_pos'      => $no_pos,
+            'name_pos'    => $nm_pos
         ];
     }
 
@@ -388,39 +421,67 @@ if ($action === 'generate_index_dwg') {
     $date_str = trim($flight['flight_date']);
     $date_compact = str_replace('-', '', substr($date_str, 5));
 
-    $dxf = "0\nSECTION\n2\nHEADER\n9\n\$ACADVER\n1\nAC1009\n0\nENDSEC\n";
-    $dxf .= "0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER\n70\n6\n";
-    $dxf .= "0\nLAYER\n2\n{$date_compact}_PP\n70\n0\n62\n1\n6\nCONTINUOUS\n";
-    $dxf .= "0\nLAYER\n2\n{$date_compact}_TT\n70\n0\n62\n7\n6\nCONTINUOUS\n";
-    $dxf .= "0\nLAYER\n2\n{$date_compact}_PP_A\n70\n0\n62\n2\n6\nCONTINUOUS\n";
-    $dxf .= "0\nLAYER\n2\n{$date_compact}_TT_A\n70\n0\n62\n2\n6\nCONTINUOUS\n";
-    $dxf .= "0\nLAYER\n2\nG50\n70\n0\n62\n7\n6\nCONTINUOUS\n";
-    $dxf .= "0\nLAYER\n2\nINDEX_50K\n70\n0\n62\n5\n6\nCONTINUOUS\n";
-    $dxf .= "0\nENDTAB\n0\nENDSEC\n";
-    $dxf .= "0\nSECTION\n2\nENTITIES\n";
+$dxf = "0\nSECTION\n2\nHEADER\n9\n\$ACADVER\n1\nAC1009\n0\nENDSEC\n";
+$dxf .= "0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER\n70\n8\n";
+$dxf .= "0\nLAYER\n2\n0\n70\n0\n62\n7\n6\nCONTINUOUS\n";
+$dxf .= "0\nLAYER\n2\n{$date_compact}_PP\n70\n0\n62\n1\n6\nCONTINUOUS\n";
+$dxf .= "0\nLAYER\n2\n{$date_compact}_TT\n70\n0\n62\n7\n6\nCONTINUOUS\n";
+$dxf .= "0\nLAYER\n2\n{$date_compact}_PP_A\n70\n0\n62\n2\n6\nCONTINUOUS\n";
+$dxf .= "0\nLAYER\n2\n{$date_compact}_TT_A\n70\n0\n62\n2\n6\nCONTINUOUS\n";
+$dxf .= "0\nLAYER\n2\nG50\n70\n0\n62\n7\n6\nCONTINUOUS\n";
+$dxf .= "0\nLAYER\n2\nN50000\n70\n0\n62\n7\n6\nCONTINUOUS\n";
+$dxf .= "0\nLAYER\n2\nT50000\n70\n0\n62\n250\n6\nCONTINUOUS\n";
+$dxf .= "0\nENDTAB\n0\nENDSEC\n";
+$dxf .= "0\nSECTION\n2\nENTITIES\n";
 
-    if ($selected_sheets_str) {
-        $bb = $parsed['bbox'];
-        $debug_dummy = [];
-        $all_sheets = extract_base_map_sheets($crs_type, $bb['min_x'], $bb['max_x'], $bb['min_y'], $bb['max_y'], $debug_dummy);
-        $sel_arr = explode(',', $selected_sheets_str);
-        
-        foreach ($all_sheets as $sheet) {
-            if (in_array($sheet['sheet_no'], $sel_arr)) {
-                $b = $sheet['bounds'];
-                $dxf .= "0\nLINE\n8\nG50\n62\n7\n10\n{$b['min_x']}\n20\n{$b['min_y']}\n30\n0.0\n11\n{$b['max_x']}\n21\n{$b['min_y']}\n31\n0.0\n";
-                $dxf .= "0\nLINE\n8\nG50\n62\n7\n10\n{$b['max_x']}\n20\n{$b['min_y']}\n30\n0.0\n11\n{$b['max_x']}\n21\n{$b['max_y']}\n31\n0.0\n";
-                $dxf .= "0\nLINE\n8\nG50\n62\n7\n10\n{$b['max_x']}\n20\n{$b['max_y']}\n30\n0.0\n11\n{$b['min_x']}\n21\n{$b['max_y']}\n31\n0.0\n";
-                $dxf .= "0\nLINE\n8\nG50\n62\n7\n10\n{$b['min_x']}\n20\n{$b['max_y']}\n30\n0.0\n11\n{$b['min_x']}\n21\n{$b['min_y']}\n31\n0.0\n";
-                
-                $cx = ($b['min_x'] + $b['max_x']) / 2;
-                $cy = ($b['min_y'] + $b['max_y']) / 2;
-                
-                $dxf .= "0\nTEXT\n8\nINDEX_50K\n62\n5\n10\n{$cx}\n20\n".($cy + 800)."\n30\n0.0\n40\n1500.0\n1\n{$sheet['sheet_name']}\n50\n0.0\n7\nSTANDARD\n";
-                $dxf .= "0\nTEXT\n8\nINDEX_50K\n62\n5\n10\n{$cx}\n20\n".($cy - 800)."\n30\n0.0\n40\n1200.0\n1\n{$sheet['sheet_no']}\n50\n0.0\n7\nSTANDARD\n";
+$included_sheet_count = 0;
+
+if ($selected_sheets_str) {
+    $bb = $parsed['bbox'];
+    $debug_dummy = [];
+    $all_sheets = extract_base_map_sheets($crs_type, $bb['min_x'], $bb['max_x'], $bb['min_y'], $bb['max_y'], $debug_dummy);
+    $sel_arr = array_map('trim', explode(',', $selected_sheets_str));
+
+    foreach ($all_sheets as $sheet) {
+        if (!in_array($sheet['sheet_no'], $sel_arr, true)) continue;
+        $included_sheet_count++;
+
+        // 1) 도곽선 — R12 호환 POLYLINE + VERTEX (원본 정점 그대로), 레이어 G50
+        if (!empty($sheet['poly_points'])) {
+            $dxf .= "0\nPOLYLINE\n8\nG50\n66\n1\n70\n1\n";
+            foreach ($sheet['poly_points'] as $p) {
+                $dxf .= "0\nVERTEX\n8\nG50\n10\n" . sprintf('%.4f', $p['x']) . "\n20\n" . sprintf('%.4f', $p['y']) . "\n";
             }
+            $dxf .= "0\nSEQEND\n8\nG50\n";
+        }
+
+        // 2) 도엽번호 — 원본 위치/크기/회전 그대로, 레이어 N50000
+        if (!empty($sheet['no_pos'])) {
+            $np = $sheet['no_pos'];
+            $dxf .= "0\nTEXT\n8\nN50000\n10\n" . sprintf('%.4f', $np['x']) . "\n20\n" . sprintf('%.4f', $np['y'])
+                  . "\n30\n0.0\n40\n" . sprintf('%.4f', $np['height']) . "\n1\n" . to_cp949($sheet['sheet_no'])
+                  . "\n50\n" . sprintf('%.4f', $np['rotation']) . "\n7\nSTANDARD\n";
+        }
+
+        // 3) 도엽명 — 원본 위치/크기/회전 그대로, 레이어 T50000
+        if (!empty($sheet['name_pos'])) {
+            $mp = $sheet['name_pos'];
+            $dxf .= "0\nTEXT\n8\nT50000\n10\n" . sprintf('%.4f', $mp['x']) . "\n20\n" . sprintf('%.4f', $mp['y'])
+                  . "\n30\n0.0\n40\n" . sprintf('%.4f', $mp['height']) . "\n1\n" . to_cp949($sheet['sheet_name'])
+                  . "\n50\n" . sprintf('%.4f', $mp['rotation']) . "\n7\nSTANDARD\n";
         }
     }
+}
+
+// 3) 도엽명 — 원본 위치/텍스트/크기/회전 그대로, 레이어 T50000
+if (!empty($sheet['name_pos'])) {
+    $mp = $sheet['name_pos'];
+    $dxf .= "0\nTEXT\n8\nT50000\n10\n" . sprintf('%.4f', $mp['x']) . "\n20\n" . sprintf('%.4f', $mp['y'])
+          . "\n40\n" . sprintf('%.4f', $mp['height']) . "\n1\n" . to_cp949($sheet['sheet_name'])
+          . "\n50\n" . sprintf('%.4f', $mp['rotation']) . "\n";
+}
+    }
+}
 
     foreach ($parsed['entities'] as $pt) {
         $id = $pt['id'];

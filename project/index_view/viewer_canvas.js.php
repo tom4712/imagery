@@ -139,32 +139,7 @@ function draw() {
     ctx.translate(canvas.width / 2 + panX, canvas.height / 2 + panY);
     ctx.scale(scale, -scale); // CAD Y축 상향 반전
 
-    // 1. 코스 선형 렌더링
-    const courses = {};
-    rawEntities.forEach(e => {
-        if (e.type === 'TEXT' && (!e.layer.includes('INDEX') && !e.layer.includes('G50'))) {
-            const l = layerState[e.layer];
-            if (!l || !l.visible || l.frozen) return;
-            const cNo = e.text.includes('_') ? e.text.split('_')[0] : e.text.substring(0, 4);
-            if (!courses[cNo]) courses[cNo] = [];
-            courses[cNo].push(e);
-        }
-    });
-
-    ctx.lineWidth = Math.max(1, 1.5 / scale);
-    ctx.strokeStyle = 'rgba(99, 102, 241, 0.45)';
-    ctx.setLineDash([8 / scale, 6 / scale]);
-    Object.values(courses).forEach(pts => {
-        if (pts.length > 1) {
-            ctx.beginPath();
-            ctx.moveTo(pts[0].x - centerX, pts[0].y - centerY);
-            for (let i = 1; i < pts.length; i++) {
-                ctx.lineTo(pts[i].x - centerX, pts[i].y - centerY);
-            }
-            ctx.stroke();
-        }
-    });
-    ctx.setLineDash([]);
+    
 
     // 2. CAD 엔티티 렌더링
     const screenTextSize = 150 * scale;
