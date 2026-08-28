@@ -164,18 +164,36 @@ if ($action === 'apply_selected_eo_file') {
         action_error_toast($prj_id, 'tab-flight', '선택한 EO 파일이 서버에 존재하지 않습니다.');
     }
 
+    $active_eo_name = $filename;
     $active_eo_path = file_exists($eo_path) ? $eo_path : $eo_path_cp949;
+    $auto_items = function_exists('img_auto_duplicate_reshoot_overbuffer_items')
+        ? img_auto_duplicate_reshoot_overbuffer_items($prj_id, $prj['prj_name'], $date_id, $active_eo_path)
+        : [];
 
-    // 신규 등록(add_flight_date)과 동일한 공용 로직으로 자동중복(재촬영 버퍼 초과) 판정 + 검수완료 파일 생성을 수행
-    $finalize = img_finalize_eo_with_auto_duplicate_check(
-        $prj_id, $prj['prj_name'], $date_id, $flight['flight_date'], $filename, $active_eo_path, $parsed_shots
-    );
+    if (!empty($auto_items) && preg_match('/\.xlsx$/i', $filename)) {
+        $eo_dir = $base_dir . '\\date\\' . trim($flight['flight_date']) . '\\EO';
+        $new_eo_name = inspect_completed_eo_name($eo_dir, $filename);
+        $new_path_fs = inspect_copy_eo_file($active_eo_path, $eo_dir, $new_eo_name);
 
-    $active_eo_name = $finalize['active_eo_name'];
-    $parsed_shots   = $finalize['total_shots'];
-    $used_shots     = $finalize['used_shots'];
-    $unused_shots   = $finalize['unused_shots'];
-    $reshoot_shots  = $finalize['reshoot_shots'];
+        if ($new_path_fs) {
+            $records = inspect_eo_records($new_path_fs);
+            list($marks, $id_type, $id_reason) = inspect_mark_map($records, $auto_items);
+            inspect_color_xlsx_rows($new_path_fs, $records, $marks, $id_reason, false);
+
+            $active_eo_name = $new_eo_name;
+            $summary = inspect_eo_count_summary($new_path_fs);
+            $parsed_shots = (int)$summary['total'];
+            $used_shots = (int)$summary['used'];
+            $unused_shots = (int)$summary['duplicate'];
+            $reshoot_shots = (int)$summary['reshoot'];
+        }
+    }
+
+    if (!isset($used_shots)) {
+        $used_shots = $parsed_shots;
+        $unused_shots = 0;
+        $reshoot_shots = 0;
+    }
 
     sql_query(" UPDATE IMG_FLIGHT_DATE 
                 SET eo_file_name = '".sql_real_escape_string($active_eo_name)."',
@@ -194,8 +212,8 @@ if ($action === 'apply_selected_eo_file') {
     }
 
     $toast_val = $active_eo_name;
-    if ($finalize['auto_applied']) {
-        $toast_val .= ' / 자동중복 ' . (int)$finalize['auto_item_count'] . '건';
+    if (!empty($auto_items) && $active_eo_name !== $filename) {
+        $toast_val .= ' / 자동중복 ' . count($auto_items) . '건';
     }
 
     action_goto_url(G5_URL.'/project/view.php?id='.$prj_id.'&tab=tab-flight&toast=eo_applied_ok&val='.urlencode($toast_val));

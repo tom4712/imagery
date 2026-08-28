@@ -36,7 +36,6 @@ $sec_checks = sql_query(" SELECT * FROM IMG_SECURITY_CHECK WHERE prj_id = {$prj_
 $qa_checks = sql_query(" SELECT * FROM IMG_QA_CHECK WHERE prj_id = {$prj_id} ORDER BY round_no ASC ");
 $block_photo_counts = img_block_photo_counts($prj_id, $prj['prj_name']);
 $flight_duplicate_video_counts = img_flight_duplicate_video_counts($prj_id, $prj['prj_name']);
-$block_metrics = img_block_metrics($prj_id, $prj['prj_name']);
 
 // 3. EO 파싱 블럭 교차 대조용 데이터
 $block_rows_for_js = [];
@@ -46,7 +45,7 @@ if ($b_res) {
         $block_rows_for_js[] = [
             'name' => $b['block_name'],
             'range' => $b['line_range'],
-            'line_list' => implode(',', img_block_course_numbers($b['line_list']))
+            'line_list' => $b['line_list']
         ];
     }
 }
@@ -339,7 +338,6 @@ if ($b_res) {
                 if (toastKey === 'error') triggerToast(decodeURIComponent(errMsg), 'error', '⚠️');
                 else if (toastKey === 'block_single_ok') triggerToast(`[${val}] 블럭 DB 및 폴더가 생성되었습니다.`, 'success', '🧩');
                 else if (toastKey === 'block_bulk_ok') triggerToast(`총 ${cnt}개 블럭 DB 및 폴더가 일괄 등록되었습니다.`, 'success', '🚀');
-                else if (toastKey === 'block_index_ok') triggerToast(`[${val}] 블럭 INDEX가 생성되었습니다.`, 'success', '🗺️');
                 else if (toastKey === 'block_delete_ok') triggerToast(`선택한 ${cnt}개 블럭과 폴더가 삭제되었습니다.`, 'warning', '🗑️');
                 else if (toastKey === 'flight_date_ok') triggerToast(`[${val}] 촬영일 폴더 및 DB가 등록되었습니다.`, 'success', '🛫');
                 else if (toastKey === 'flight_delete_ok') triggerToast(`선택한 ${cnt}개 촬영일과 실제 폴더가 완전히 삭제되었습니다.`, 'warning', '🗑️');

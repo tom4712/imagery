@@ -30,114 +30,6 @@ if (!isset($base_dir)) {
 .sub-panel-row.hidden {
     display: none !important;
 }
-.flight-detail-shell {
-    background: linear-gradient(180deg, rgba(15, 23, 42, 0.62), rgba(15, 23, 42, 0.42));
-    border: 1px solid rgba(148, 163, 184, 0.12);
-    border-radius: 10px;
-    padding: 8px 10px;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
-}
-.flight-detail-grid {
-    display: grid;
-    grid-template-columns: minmax(280px, 1.4fr) minmax(220px, 1fr) minmax(140px, 0.55fr) auto;
-    gap: 6px;
-    align-items: center;
-}
-.flight-detail-item {
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    height: 28px;
-    padding: 0 8px;
-    border: 1px solid transparent;
-    border-radius: 7px;
-    background: transparent;
-    font-family: Pretendard, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    cursor: pointer;
-    outline: none;
-}
-.flight-detail-item:hover {
-    background: rgba(148, 163, 184, 0.08);
-}
-.flight-detail-item:focus-visible {
-    border-color: rgba(129, 140, 248, 0.45);
-}
-.flight-detail-label {
-    flex: 0 0 auto;
-    width: 42px;
-    color: rgba(148, 163, 184, 0.72);
-    font-size: 10px;
-    font-weight: 900;
-    letter-spacing: 0;
-    text-align: left;
-}
-.flight-detail-value {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-family: Pretendard, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    font-size: 12px;
-    font-weight: 700;
-    color: rgba(226, 232, 240, 0.88);
-}
-.flight-detail-count {
-    flex: 0 0 auto;
-    height: 17px;
-    min-width: 17px;
-    padding: 0 5px;
-    border-radius: 999px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 10px;
-    font-weight: 900;
-    background: rgba(148, 163, 184, 0.13);
-    color: rgba(226, 232, 240, 0.72);
-}
-.flight-detail-actions {
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-    gap: 5px;
-    white-space: nowrap;
-}
-.flight-detail-actions .btn {
-    height: 28px;
-    min-height: 28px;
-    border-radius: 7px;
-    font-family: Pretendard, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    font-size: 11px;
-    font-weight: 800;
-}
-.flight-action-secondary {
-    border-color: rgba(148, 163, 184, 0.22) !important;
-    color: rgba(226, 232, 240, 0.76) !important;
-    background: rgba(15, 23, 42, 0.22) !important;
-}
-.flight-action-secondary:hover {
-    border-color: rgba(56, 189, 248, 0.55) !important;
-    background: rgba(14, 165, 233, 0.12) !important;
-    color: rgb(125, 211, 252) !important;
-}
-.flight-action-primary {
-    border: 1px solid rgba(129, 140, 248, 0.35) !important;
-    background: rgba(99, 102, 241, 0.18) !important;
-    color: rgba(224, 231, 255, 0.92) !important;
-}
-.flight-action-primary:hover {
-    background: rgba(99, 102, 241, 0.28) !important;
-}
-@media (max-width: 1100px) {
-    .flight-detail-grid {
-        grid-template-columns: 1fr 1fr;
-    }
-    .flight-detail-actions {
-        grid-column: 1 / -1;
-        justify-content: flex-start;
-    }
-}
 </style>
 
 <div id="tab-flight" class="tab-content-panel flex-1 overflow-y-auto custom-scrollbar">
@@ -299,60 +191,69 @@ if (!isset($base_dir)) {
                     </tr>
 
                     <!-- 아코디언 서브 패널 -->
-                    <tr id="sub_row_<?php echo $row['date_id']; ?>" class="sub-panel-row hidden bg-base-200/20 border-b border-base-content/10">
-                        <td colspan="13" class="px-6 py-2 text-left">
-                            <?php 
-                                $display_eo = ($row['eo_file_name'] ?: $eo_filename) ?: '미등록';
-                                $display_idx = $idx_filename ?: '미생성';
-                                $has_inspect_result = (mb_strpos((string)$row['eo_file_name'], '_검수완료') !== false);
-                            ?>
-                            <div class="flight-detail-shell">
-                                <div class="flight-detail-grid">
-                                    <button type="button"
-                                            class="flight-detail-item text-left hover:border-primary/60 transition-colors"
-                                            title="EO 파일 목록 확인 및 교체"
-                                            ondblclick="event.stopPropagation(); openEOFilePicker('<?php echo $row['date_id']; ?>', '<?php echo $row['flight_date']; ?>');"
-                                            onclick="event.stopPropagation(); openEOFilePicker('<?php echo $row['date_id']; ?>', '<?php echo $row['flight_date']; ?>');">
-                                        <span class="flight-detail-label">EO</span>
-                                        <span class="flight-detail-value"><?php echo htmlspecialchars($display_eo); ?></span>
-                                        <?php if($eo_count > 0) { ?><span class="flight-detail-count"><?php echo $eo_count; ?></span><?php } ?>
-                                    </button>
-
-                                    <button type="button"
-                                            class="flight-detail-item text-left hover:border-secondary/60 transition-colors"
-                                            title="인덱스 도면 화면으로 이동"
-                                            onclick="event.stopPropagation(); location.href='index_view.php?prj_id=<?php echo $prj_id; ?>&date_id=<?php echo $row['date_id']; ?>';">
-                                        <span class="flight-detail-label">INDEX</span>
-                                        <span class="flight-detail-value <?php echo $idx_filename ? '' : 'text-error/80'; ?>"><?php echo htmlspecialchars($display_idx); ?></span>
-                                    </button>
-
-                                    <button type="button"
-                                            class="flight-detail-item text-left hover:border-accent/60 transition-colors"
-                                            title="촬영기록부 및 코스별검사표 관리"
-                                            onclick="event.stopPropagation(); openDocManagerModal(<?php echo (int)$prj_id; ?>, <?php echo (int)$row['date_id']; ?>, '<?php echo htmlspecialchars($date_str, ENT_QUOTES); ?>', '<?php echo htmlspecialchars($prj['prj_name'] ?? '', ENT_QUOTES); ?>');">
-                                        <span class="flight-detail-label">문서</span>
-                                        <span class="flight-detail-value"><?php echo $doc_count > 0 ? '등록됨' : '미등록'; ?></span>
-                                        <span class="flight-detail-count"><?php echo $doc_count; ?></span>
-                                    </button>
-
-                                    <div class="flight-detail-actions">
-                                        <button type="button"
-                                                class="btn btn-xs btn-outline flight-action-secondary gap-1 <?php echo $duplicate_video_shots > 0 ? '' : 'btn-disabled opacity-45'; ?>"
-                                                <?php echo $duplicate_video_shots > 0 ? '' : 'disabled'; ?>
-                                                title="<?php echo $duplicate_video_shots > 0 ? '다른 촬영일과 겹치는 EO 사진번호를 확인하고 사용할 일자를 선택합니다.' : '중복영상이 없습니다.'; ?>"
-                                                onclick="event.stopPropagation(); openDuplicateVideoModal(<?php echo (int)$row['date_id']; ?>, '<?php echo htmlspecialchars($date_str, ENT_QUOTES); ?>');">
-                                            <i class="fa-solid fa-code-compare text-[10px]"></i>
-                                            <span>중복확인</span>
-                                            <?php if ($duplicate_video_shots > 0) { ?>
-                                                <span class="font-mono text-[10px]"><?php echo number_format($duplicate_video_shots); ?></span>
-                                            <?php } ?>
-                                        </button>
-                                        <button type="button" class="btn btn-xs flight-action-primary gap-1" 
-                                                onclick="event.stopPropagation(); openFlightInspectModal('<?php echo $row['date_id']; ?>', '<?php echo $row['flight_date']; ?>', '<?php echo $row['total_shots']; ?>', '<?php echo $row['used_shots']; ?>', '<?php echo $row['unused_shots']; ?>', '<?php echo $row['reshoot_shots']; ?>')">
-                                            <i class="fa-solid fa-pen-to-square text-[10px]"></i>
-                                            <span><?php echo $has_inspect_result ? '검수수정' : '검수입력'; ?></span>
-                                        </button>
+                    <tr id="sub_row_<?php echo $row['date_id']; ?>" class="sub-panel-row hidden bg-base-200/40 border-b border-base-content/10">
+                        <td colspan="13" class="p-3 text-left">
+                            <div class="bg-base-100/95 rounded-xl p-3 border border-base-content/10 shadow-inner flex flex-wrap items-center justify-between gap-3">
+                                
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <!-- EO 배지 -->
+                                    <div class="flex items-center gap-1.5 bg-base-200/80 border border-base-content/10 rounded-lg px-2.5 py-1.5 shadow-sm cursor-pointer hover:border-primary transition-colors group/eo"
+                                         title="더블클릭하여 폴더 내 EO 파일 목록 확인 및 교체"
+                                         ondblclick="event.stopPropagation(); openEOFilePicker('<?php echo $row['date_id']; ?>', '<?php echo $row['flight_date']; ?>');">
+                                        <span class="text-sm">🧭</span>
+                                        <span class="font-bold text-xs text-base-content/70">EO:</span>
+                                        <?php if($row['eo_file_name'] || $eo_filename) { 
+                                            $display_eo = $row['eo_file_name'] ?: $eo_filename;
+                                        ?>
+                                            <span class="badge badge-primary badge-sm font-mono text-[11px] font-semibold flex items-center gap-1">
+                                                <span><?php echo htmlspecialchars(mb_strimwidth($display_eo, 0, 24, '...')); ?></span>
+                                                <span class="text-[9px] opacity-75">(총 <?php echo $eo_count; ?>개)</span>
+                                            </span>
+                                        <?php } else { ?>
+                                            <span class="badge badge-ghost badge-sm text-[11px] opacity-60">미등록</span>
+                                        <?php } ?>
                                     </div>
+
+                                    <!-- INDEX 배지 -->
+                                    <div class="flex items-center gap-1.5 bg-base-200/80 border border-base-content/10 rounded-lg px-2.5 py-1.5 shadow-sm cursor-pointer hover:border-secondary transition-colors group/idx"
+                                         title="더블클릭하여 인덱스 도면 화면으로 이동"
+                                         ondblclick="event.stopPropagation(); location.href='index_view.php?prj_id=<?php echo $prj_id; ?>&date_id=<?php echo $row['date_id']; ?>';">
+                                        <span class="text-sm">🗺️</span>
+                                        <span class="font-bold text-xs text-base-content/70">INDEX:</span>
+                                        <?php if($idx_filename) { ?>
+                                            <span class="badge badge-secondary badge-sm font-mono text-[11px] font-semibold flex items-center gap-1">
+                                                <span><?php echo htmlspecialchars(mb_strimwidth($idx_filename, 0, 26, '...')); ?></span>
+                                            </span>
+                                        <?php } else { ?>
+                                            <span class="badge badge-error badge-outline badge-sm text-[11px]">미생성</span>
+                                        <?php } ?>
+                                    </div>
+
+                                    <!-- 💡 문서 배지: 더블클릭 시 문서 관리 모달 오픈 -->
+                                    <div class="flex items-center gap-1.5 bg-base-200/80 border border-base-content/10 rounded-lg px-2.5 py-1.5 shadow-sm cursor-pointer hover:border-accent transition-colors group/doc"
+                                         title="더블클릭하여 촬영기록부 및 코스별검사표 관리"
+                                         ondblclick="event.stopPropagation(); openDocManagerModal(<?php echo (int)$prj_id; ?>, <?php echo (int)$row['date_id']; ?>, '<?php echo htmlspecialchars($date_str, ENT_QUOTES); ?>', '<?php echo htmlspecialchars($prj['prj_name'] ?? '', ENT_QUOTES); ?>');">
+                                        <span class="text-sm">📑</span>
+                                        <span class="font-bold text-xs text-base-content/70">문서:</span>
+                                        <?php if($doc_count > 0) { ?>
+                                            <span class="badge badge-accent badge-sm font-mono text-[11px] font-bold"><?php echo $doc_count; ?>건 등록됨</span>
+                                            <span class="text-[10px] text-accent opacity-0 group-hover/doc:opacity-100 transition-opacity font-bold ml-1">⚡ 더블클릭</span>
+                                        <?php } else { ?>
+                                            <span class="badge badge-ghost badge-sm text-[11px] opacity-60">0건 (더블클릭)</span>
+                                        <?php } ?>
+                                    </div>
+                                </div>
+
+                                <?php $has_inspect_result = (mb_strpos((string)$row['eo_file_name'], '_검수완료') !== false); ?>
+                                <div class="flex items-center gap-2">
+                                    <button type="button" class="btn btn-xs rounded-lg font-bold gap-1 shadow-sm <?php echo $has_inspect_result ? 'btn-warning shadow-warning/20' : 'btn-primary shadow-primary/20'; ?>" 
+                                            onclick="openFlightInspectModal('<?php echo $row['date_id']; ?>', '<?php echo $row['flight_date']; ?>', '<?php echo $row['total_shots']; ?>', '<?php echo $row['used_shots']; ?>', '<?php echo $row['unused_shots']; ?>', '<?php echo $row['reshoot_shots']; ?>')">
+                                        <?php if ($has_inspect_result) { ?>
+                                            <span>✍️ 검수내역 수정</span>
+                                        <?php } else { ?>
+                                            <span>✍️ 검수내역 입력</span>
+                                        <?php } ?>
+                                    </button>
                                 </div>
                             </div>
                         </td>

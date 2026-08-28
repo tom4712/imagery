@@ -474,44 +474,12 @@ if ($action === 'add_flight_date') {
                  created_at = NOW() ";
     sql_query($sql);
 
-    $new_date_id = (int)sql_insert_id();
-
-    // 신규 등록 시점에도 이전 촬영일들과 비교해 재촬영 버퍼 초과분을 자동으로 중복미사용 처리한다.
-    // (기존에는 이 판정이 apply_selected_eo_file 에서만 동작해, 신규 촬영일 최초 업로드 때는 걸러지지 않던 문제 수정)
-    $finalize = null;
-    if ($new_date_id > 0 && $uploaded_eo_name !== '' && function_exists('img_finalize_eo_with_auto_duplicate_check')) {
-        $uploaded_eo_path = $eo_dir . '\\' . $uploaded_eo_name;
-        $uploaded_eo_path_cp949 = iconv('UTF-8', 'CP949//IGNORE', $uploaded_eo_path);
-        $active_eo_path = file_exists($uploaded_eo_path) ? $uploaded_eo_path : $uploaded_eo_path_cp949;
-
-        if ($active_eo_path && file_exists($active_eo_path)) {
-            $finalize = img_finalize_eo_with_auto_duplicate_check(
-                $prj_id, $prj['prj_name'], $new_date_id, $flight_date, $uploaded_eo_name, $active_eo_path, $parsed_shots
-            );
-
-            if ($finalize['auto_applied']) {
-                sql_query(" UPDATE IMG_FLIGHT_DATE 
-                            SET eo_file_name = '".sql_real_escape_string($finalize['active_eo_name'])."',
-                                total_shots = {$finalize['total_shots']},
-                                used_shots = {$finalize['used_shots']},
-                                unused_shots = {$finalize['unused_shots']},
-                                reshoot_shots = {$finalize['reshoot_shots']}
-                            WHERE date_id = {$new_date_id} AND prj_id = {$prj_id} ");
-            }
-        }
-    }
-
     $vol_row = sql_fetch(" SELECT IFNULL(SUM(total_shots), 0) AS total_vol FROM IMG_FLIGHT_DATE WHERE prj_id = {$prj_id} AND status = 'ACTIVE' ");
     if ($vol_row) {
         sql_query(" UPDATE IMG_PROJECT SET prj_volume = {$vol_row['total_vol']} WHERE prj_id = {$prj_id} ");
     }
 
-    $toast_val = $flight_date;
-    if (!empty($finalize['auto_applied'])) {
-        $toast_val .= ' / 자동중복 ' . (int)$finalize['auto_item_count'] . '건';
-    }
-
-    action_goto_url(G5_URL.'/project/view.php?id='.$prj_id.'&tab=tab-flight&toast=flight_date_ok&val='.urlencode($toast_val));
+    action_goto_url(G5_URL.'/project/view.php?id='.$prj_id.'&tab=tab-flight&toast=flight_date_ok&val='.$flight_date);
 }
 
 // 2. 검수내역 업데이트
@@ -679,50 +647,6 @@ function inspect_eo_count_summary($file_path) {
         'used' => $used,
         'duplicate' => $duplicate,
         'reshoot' => $reshoot
-    ];
-}
-
-// EO 파일을 확정(등록/적용)할 때 공통으로 수행할 자동중복(재촬영 버퍼 초과) 판정 + 검수완료 파일 생성 로직.
-// add_flight_date(신규 촬영일 등록)와 apply_selected_eo_file(EO 파일 재선택 적용) 양쪽에서 동일하게 사용한다.
-// 반환값: ['active_eo_name', 'total_shots', 'used_shots', 'unused_shots', 'reshoot_shots', 'auto_item_count', 'auto_applied']
-function img_finalize_eo_with_auto_duplicate_check($prj_id, $project_name, $date_id, $flight_date, $filename, $active_eo_path, $parsed_shots) {
-    $active_eo_name = $filename;
-    $auto_items = ($date_id > 0 && $active_eo_path && function_exists('img_auto_duplicate_reshoot_overbuffer_items'))
-        ? img_auto_duplicate_reshoot_overbuffer_items($prj_id, $project_name, $date_id, $active_eo_path)
-        : [];
-
-    $used_shots = $parsed_shots;
-    $unused_shots = 0;
-    $reshoot_shots = 0;
-
-    if (!empty($auto_items) && preg_match('/\.xlsx$/i', $filename)) {
-        $base_dir = img_project_path($project_name);
-        $eo_dir = $base_dir . '\\date\\' . trim($flight_date) . '\\EO';
-        $new_eo_name = inspect_completed_eo_name($eo_dir, $filename);
-        $new_path_fs = inspect_copy_eo_file($active_eo_path, $eo_dir, $new_eo_name);
-
-        if ($new_path_fs) {
-            $records = inspect_eo_records($new_path_fs);
-            list($marks, $id_type, $id_reason) = inspect_mark_map($records, $auto_items);
-            inspect_color_xlsx_rows($new_path_fs, $records, $marks, $id_reason, false);
-
-            $active_eo_name = $new_eo_name;
-            $summary = inspect_eo_count_summary($new_path_fs);
-            $parsed_shots = (int)$summary['total'];
-            $used_shots = (int)$summary['used'];
-            $unused_shots = (int)$summary['duplicate'];
-            $reshoot_shots = (int)$summary['reshoot'];
-        }
-    }
-
-    return [
-        'active_eo_name' => $active_eo_name,
-        'total_shots' => $parsed_shots,
-        'used_shots' => $used_shots,
-        'unused_shots' => $unused_shots,
-        'reshoot_shots' => $reshoot_shots,
-        'auto_item_count' => count($auto_items),
-        'auto_applied' => ($active_eo_name !== $filename)
     ];
 }
 
